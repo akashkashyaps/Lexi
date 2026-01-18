@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lexi 🦊 - English Learning Assistant</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <!-- Welcome Screen -->
+    <div id="welcome-screen" class="screen active">
+        <div class="welcome-container">
+            <div class="mascot">🦊</div>
+            <h1 class="app-title">Lexi</h1>
+            <p class="tagline">Your friendly English learning companion</p>
+
+            <div class="form-container">
+                <div class="input-group">
+                    <label for="student-name">What's your name?</label>
+                    <input type="text" id="student-name" placeholder="Enter your name" autocomplete="off">
+                </div>
+
+                <div class="input-group">
+                    <label for="student-class">Which class are you in?</label>
+                    <input type="text" id="student-class" placeholder="e.g., 5, 6, 7, 8" autocomplete="off">
+                </div>
+
+                <div class="input-group">
+                    <label for="api-key">Groq API Key</label>
+                    <input type="password" id="api-key" placeholder="Enter your Groq API key" autocomplete="off">
+                    <span class="input-hint-small">Get free key at <a href="https://console.groq.com" target="_blank">console.groq.com</a></span>
+                </div>
+
+                <button id="start-btn" class="primary-btn">
+                    <span>Continue</span>
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                        <path d="M7.5 15L12.5 10L7.5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Activity Selection Screen -->
+    <div id="activity-screen" class="screen">
+        <div class="activity-container">
+            <div class="activity-header">
+                <div>
+                    <h2 id="student-info">Student Name • Class X</h2>
+                    <h1 class="activity-title">Pick an Activity</h1>
+                    <p class="activity-subtitle">Choose a writing exercise and improve your English!</p>
+                </div>
+                <button id="new-session-btn" class="secondary-btn">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                        <path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                    <span>New Session</span>
+                </button>
+            </div>
+
+            <div class="activities-grid">
+                <!-- Beginner Activities -->
+                <div class="level-section">
+                    <h3 class="level-title">Beginner</h3>
+                    <div id="beginner-activities" class="activity-cards">
+                        <!-- Cards will be inserted here -->
+                    </div>
+                </div>
+
+                <!-- Intermediate Activities -->
+                <div class="level-section">
+                    <h3 class="level-title">Intermediate</h3>
+                    <div id="intermediate-activities" class="activity-cards">
+                        <!-- Cards will be inserted here -->
+                    </div>
+                </div>
+
+                <!-- Advanced Activities -->
+                <div class="level-section">
+                    <h3 class="level-title">Advanced</h3>
+                    <div id="advanced-activities" class="activity-cards">
+                        <!-- Cards will be inserted here -->
+                    </div>
+                </div>
+
+                <!-- Story Mode -->
+                <div class="level-section">
+                    <h3 class="level-title">Story Mode</h3>
+                    <div id="story-activities" class="activity-cards">
+                        <!-- Story mode card will be inserted here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chat Screen -->
+    <div id="chat-screen" class="screen">
+        <div class="chat-container">
+            <div class="chat-header">
+                <div class="header-left">
+                    <span class="mascot-small">🦊</span>
+                    <div>
+                        <h2>Lexi</h2>
+                        <p class="status" id="activity-status">Activity in progress</p>
+                    </div>
+                </div>
+                <div class="header-right">
+                    <div class="message-counter">
+                        <span id="message-count">0</span>/<span id="max-messages">80</span>
+                    </div>
+                    <button id="back-btn" class="secondary-btn">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                            <path d="M10 12L6 8L10 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        Back to Activities
+                    </button>
+                </div>
+            </div>
+
+            <div id="chat-messages" class="chat-messages">
+                <!-- Messages will be added here dynamically -->
+            </div>
+
+            <div class="chat-input-container">
+                <div class="input-wrapper">
+                    <textarea
+                        id="message-input"
+                        placeholder="Type your writing here..."
+                        rows="1"
+                    ></textarea>
+                    <button id="send-btn" class="send-btn" disabled>
+                        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                            <path d="M18 2L9 11M18 2L12 18L9 11M18 2L2 8L9 11" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="input-hint">Press Enter to send, Shift+Enter for new line</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Indicator -->
+    <div id="loading" class="loading hidden">
+        <div class="loading-spinner"></div>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
