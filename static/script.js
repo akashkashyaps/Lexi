@@ -204,13 +204,13 @@ function createActivityCard(activity) {
         <p class="activity-card-description">${activity.description}</p>
     `;
 
-    card.addEventListener('click', () => startActivity(activity.id, activity.title));
+    card.addEventListener('click', () => startActivity(activity.id, activity.title, activity.description));
 
     return card;
 }
 
 // Start Activity
-async function startActivity(activityId, activityTitle) {
+async function startActivity(activityId, activityTitle, activityDescription) {
     if (!sessionId) return;
 
     showLoading(true);
@@ -254,6 +254,9 @@ async function startActivity(activityId, activityTitle) {
             updateMessageCounter(data.message_count, data.max_messages);
 
             switchScreen('chat');
+            if (activityDescription && activityId !== 'story_adventure') {
+                addMessage('assistant', `**${activityTitle}**\n${activityDescription}`);
+            }
             addMessage('assistant', data.message, data.image_url);
             focusInput(messageInput);
         } else if (response.status === 403 && data.limit_reached) {
