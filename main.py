@@ -5,6 +5,7 @@ Main application file
 import os
 import re
 import webbrowser
+from datetime import date
 from threading import Timer
 from flask import Flask, render_template, request, jsonify
 from dotenv import load_dotenv
@@ -18,6 +19,46 @@ app = Flask(__name__)
 
 # Configure Groq API
 GROQ_MODEL = os.getenv('GROQ_MODEL', 'moonshotai/kimi-k2-instruct-0905')
+
+# Pool of Groq API keys shared across all classes/sessions
+API_KEY_POOL = [
+    key for key in (os.getenv(f'GROQ_API_KEY_{i}') for i in range(1, 11))
+    if key and not key.startswith('your_key_')
+]
+
+# Daily request budget per key (Groq free tier is 1000/day; keep a safety buffer)
+DAILY_KEY_LIMIT = int(os.getenv('GROQ_DAILY_KEY_LIMIT', '950'))
+
+# Tracks {api_key: {'date': 'YYYY-MM-DD', 'count': N}}
+key_usage = {}
+
+
+def assign_api_key():
+    """Pick the least-used API key that's still under today's limit"""
+    if not API_KEY_POOL:
+        return None
+
+    today = date.today().isoformat()
+    best_key, best_count = None, None
+
+    for key in API_KEY_POOL:
+        entry = key_usage.get(key)
+        count = entry['count'] if entry and entry['date'] == today else 0
+        if count < DAILY_KEY_LIMIT and (best_count is None or count < best_count):
+            best_key, best_count = key, count
+
+    return best_key
+
+
+def record_key_use(api_key):
+    """Increment today's usage count for a key"""
+    today = date.today().isoformat()
+    entry = key_usage.get(api_key)
+    if entry and entry['date'] == today:
+        entry['count'] += 1
+    else:
+        key_usage[api_key] = {'date': today, 'count': 1}
+
 
 # Configure Unsplash API
 UNSPLASH_ACCESS_KEY = os.getenv('UNSPLASH_ACCESS_KEY')
@@ -45,7 +86,10 @@ def call_groq(messages, api_key):
 
         response.raise_for_status()
         data = response.json()
-        return data['choices'][0]['message']['content']
+        content = data['choices'][0]['message']['content']
+        # Strip reasoning-model <think> blocks before showing output to students
+        content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL).strip()
+        return content
 
     except Exception as e:
         print(f"Groq API Error: {e}")
@@ -84,21 +128,21 @@ ACTIVITIES = {
             'title': 'Quick Response Game',
             'description': 'Answer questions FAST! You have 3 seconds. Don\'t think - just type the first English word!',
             'level': 'think_english',
-            'scaffold': 'Ask 15-20 rapid questions: colors (sky=blue, grass=green), numbers (fingers=10, 1+1=2), animals (says moo=cow), food (hot or cold), actions (eyes=see, ears=hear). Praise speed, not accuracy!'
+            'scaffold': 'Ask 15-20 rapid questions across MANY different topics each session — mix: colors of things around them (blood=red, banana=yellow, coal=black), numbers (wheels on a car, legs on a spider, months in a year), animals and their sounds or features, food temperatures or tastes, body parts and their actions, weather, sports, school objects, nature. NEVER repeat the same questions across sessions. Be unpredictable and surprising! Praise speed, not accuracy!'
         },
         {
             'id': 'picture_words',
             'title': 'Picture Association',
             'description': 'I will describe a picture. You type English words you think of. No sentences needed!',
             'level': 'think_english',
-            'scaffold': 'Describe simple scenes: "A boy eats an apple in the park" or "A girl plays with a ball". Accept ANY English words they type. Then help build sentence from their words.'
+            'scaffold': 'Describe vivid, VARIED scenes each session — use creative settings like a busy market, a rainy football match, a child flying a kite, a dog chasing a butterfly, a farmer picking mangoes, a student opening a lunchbox, a cat sleeping on a rooftop. NEVER use the same scene twice. Accept ANY English words they type. Then help build a sentence from their words.'
         },
         {
             'id': 'word_chain',
             'title': 'Word Chain Thinking',
             'description': 'I say an English word. You type the FIRST English word that comes to your mind!',
             'level': 'think_english',
-            'scaffold': 'Give words: food, school, home, happy, play. Student responds with related English word (food→rice, school→teacher). Do 10 words. Build speed. Any related word is correct!'
+            'scaffold': 'Give 10 VARIED trigger words each session — draw from different categories: emotions (angry, excited, sad), places (jungle, beach, hospital, market), actions (jump, whisper, climb), weather (storm, fog, sunshine), animals, sports, objects, colors, seasons, jobs. Mix categories unpredictably. Student responds with any related English word. Build speed. Any related word is correct!'
         }
     ],
     'foundation': [
@@ -107,21 +151,21 @@ ACTIVITIES = {
             'title': 'Learn 10 Words',
             'description': 'Learn 10 important English words with examples. We will practice using them!',
             'level': 'foundation',
-            'scaffold': 'Teach: I, you, go, like, eat, food, school, friend, happy, today. Give example for each. Ask student to type word. Then use in simple sentence.'
+            'scaffold': 'Each session, teach a DIFFERENT set of 10 useful everyday words — rotate between themes: home (door, sleep, cook, clean), outdoors (walk, rain, tree, street, bird), feelings (worried, proud, bored, excited), school (pencil, answer, question, read), family (mother, brother, older, younger), time (morning, yesterday, soon, after). Use each word in a fresh, interesting example sentence. Ask student to type the word, then use it themselves.'
         },
         {
             'id': 'two_word_sentences',
             'title': 'Make 2-Word Sentences',
             'description': 'Let\'s make tiny sentences with just 2 words! Example: "I go" or "I like"',
             'level': 'foundation',
-            'scaffold': 'Provide word pairs: I go, I eat, I like, I play, I sleep. Student copies. Then tries own: I ___ with word bank (run, read, write, sing, dance).'
+            'scaffold': 'Provide 5 word pairs each session, drawn from a WIDE range — not just "I go/eat/like" every time. Rotate verbs: I swim, I draw, I cook, I fall, I wake, I build, I wait, I dream, I clap, I hide. Student copies the pair, then tries their own using a fresh word bank of 5 verbs you have NOT already used this session.'
         },
         {
             'id': 'yes_no',
             'title': 'Yes/No Practice',
             'description': 'Answer simple questions with just "Yes" or "No". Easy!',
             'level': 'foundation',
-            'scaffold': 'Ask 10 questions: Do you like pizza? Do you go to school? Is sky blue? Can you read? Simple yes/no answers. Celebrate every answer!'
+            'scaffold': 'Ask 10 yes/no questions each session from a WIDE variety of topics — mix: preferences (Do you like mangoes? Do you like swimming?), facts about the world (Is the moon round? Do fish live in water?), abilities (Can you run fast? Can you cook?), habits (Do you wake up early? Do you drink tea?), funny surprises (Can a cat fly? Do you eat the moon?). NEVER repeat the same questions. Keep students guessing! Celebrate every answer!'
         }
     ],
     'beginner': [
@@ -130,21 +174,21 @@ ACTIVITIES = {
             'title': 'Complete the Sentence',
             'description': 'I will start a sentence. You add ONE word to finish it!',
             'level': 'beginner',
-            'scaffold': 'Give: "I like ___" with word bank (pizza, books, cricket, friends, music). Student fills one word. Do 5-6 sentences with different starts.'
+            'scaffold': 'Give 5-6 sentence starters each session, and rotate the starters AND the word banks every session — starters to rotate: "I want ___", "She has ___", "We play ___", "He eats ___", "I see ___", "They like ___", "My friend is ___". Word banks should draw from unpredictable categories: nature (river, cloud, stone, wind), animals (parrot, goat, elephant), food from different cultures (dal, noodles, bread, samosa), sports and hobbies, household items. NEVER default to pizza/books/cricket every time.'
         },
         {
             'id': 'build_three_words',
             'title': 'Build 3-Word Sentences',
             'description': 'Make sentences with 3 words: Who + Does + What. Example: "I eat food"',
             'level': 'beginner',
-            'scaffold': 'Template: [I/You/He/She] + [eat/like/play/read] + [food/book/ball/game]. Provide word bank for each part. Build 5 sentences together.'
+            'scaffold': 'Template: [subject] + [verb] + [object]. Each session, use FRESH word banks for each slot — subjects: I/You/He/She/My friend/The cat/My mother; verbs rotate each session (eat, like, play, read, kick, carry, find, open, catch, hold, wash, draw); objects drawn from varied categories (ball, bag, mango, umbrella, pencil, flower, fish, stone, leaf, kite). Build 5 sentences. Make combinations surprising and fun — "My friend catches a butterfly" not just "I eat food" every time.'
         },
         {
             'id': 'fix_sentence',
             'title': 'Fix the Sentence',
             'description': 'Words are mixed up! Put them in correct order.',
             'level': 'beginner',
-            'scaffold': 'Give jumbled: "school I go", "pizza like I", "book reads she". Student fixes. Then teach articles: "I go TO school", add THE, A, AN.'
+            'scaffold': 'Give 4-5 jumbled sentences each session, rotating the topics widely — use school, home, nature, sports, animals, shopping, cooking. Examples to rotate: "runs dog the fast", "door open she the", "eats bird small worm a", "plays he park the in". After fixing, teach ONE grammar point relevant to the sentences — articles (a/an/the), prepositions (in/on/at/to), or word order. Keep examples fresh and varied every session.'
         }
     ],
     'intermediate': [
@@ -153,21 +197,21 @@ ACTIVITIES = {
             'title': 'Add More Details',
             'description': 'Take a simple sentence and make it better by adding describing words!',
             'level': 'intermediate',
-            'scaffold': 'Start with: "I like pizza" → add color/size: "I like hot pizza" or "I like big pizza". Give adjective bank: hot, cold, big, small, red, blue, good, bad.'
+            'scaffold': 'Each session, start with a DIFFERENT base sentence — rotate between: "I see a bird", "She has a bag", "He drinks water", "The dog runs", "We play outside", "My friend reads a book". Expand with adjectives from a VARIED bank each time: tall/short, loud/quiet, sweet/sour, heavy/light, fast/slow, clean/dirty, bright/dark, smooth/rough, shiny/dusty. Combine unpredictably — "She has a heavy, dusty bag." Keep the combinations surprising!'
         },
         {
             'id': 'past_tense',
             'title': 'Past Tense Practice',
             'description': 'Change sentences from today to yesterday! Learn past tense.',
             'level': 'intermediate',
-            'scaffold': 'Present: "I go to school" → Past: "I went to school". Teach: go→went, eat→ate, play→played, like→liked. Practice 6-8 conversions.'
+            'scaffold': 'Each session, choose a DIFFERENT set of 6-8 verbs to practice — rotate across: regular verbs (walk→walked, wash→washed, climb→climbed, drop→dropped, jump→jumped, call→called, open→opened, watch→watched) and irregular verbs (go→went, eat→ate, see→saw, run→ran, drink→drank, fall→fell, find→found, break→broke, take→took, sleep→slept). Build present→past sentences around varied everyday events: morning routines, sports, market trips, family moments, school experiences. Keep topics fresh each session.'
         },
         {
             'id': 'sentence_combining',
             'title': 'Sentence Combining',
             'description': 'Join two simple sentences into one better sentence! Learn to use connecting words.',
             'level': 'intermediate',
-            'scaffold': 'Give 2 simple sentences, student combines with: and, but, because, so. Examples: "I like pizza" + "Pizza is hot" → "I like pizza because it is hot" OR "I like hot pizza". Start with **and**, then **but**, then **because**. Provide word bank of connectors. Accept multiple correct answers!'
+            'scaffold': 'Each session, create 4-5 FRESH sentence pairs from different life topics — nature, sports, food, family, school, animals, weather, transport. Rotate the topics widely: ("The dog barked" + "I was scared"), ("She studied hard" + "She passed the test"), ("It was raining" + "We stayed inside"), ("He was tired" + "He slept early"), ("The mango was ripe" + "I ate it"). Student combines with: and, but, because, so, when. Start with **and**, progress to **because** and **but**. Accept multiple correct answers!'
         }
     ],
     'advanced': [
@@ -176,21 +220,21 @@ ACTIVITIES = {
             'title': 'Write 3 Sentences',
             'description': 'Write 3 sentences about a topic. I will give you sentence starters!',
             'level': 'advanced',
-            'scaffold': 'Topic: My School. Starters: "My school name is___", "I study___", "I like___". Or topic: My Family with different starters. Help expand each sentence.'
+            'scaffold': 'Each session, choose a DIFFERENT topic from a wide range — My Morning Routine, My Favourite Season, A Time I Was Scared, My Neighbourhood, An Animal I Find Interesting, A Food I Love, Something I Want to Learn, A Person I Admire, A Place I Want to Visit, My Favourite Sport, A Strange Dream, The Best Day This Week. Give 3 FRESH sentence starters that match the chosen topic. Help the student expand each sentence with details. Rotate topics — never use the same topic twice in a row.'
         },
         {
             'id': 'tell_story',
             'title': 'Tell a Short Story',
             'description': 'Tell a story in 4-5 sentences. I will help you!',
             'level': 'advanced',
-            'scaffold': 'Story prompts: "My best day" or "A funny thing happened". Provide: First (One day...), Then (I saw...), Next (I did...), Finally (I felt...). Build story together.'
+            'scaffold': 'Each session, offer 2-3 VARIED story prompts and let students pick one — rotate through: "A time I helped someone", "The strangest thing I ever saw", "My favourite memory with my family", "If I had a superpower for one day", "A day everything went wrong", "I found something unexpected", "My first time trying something new", "A very hot/rainy/cold day", "When I was very proud of myself", "If I could talk to an animal". Provide fresh story starters that fit the chosen prompt. Build the story together using their real or imagined experiences.'
         },
         {
             'id': 'describe_free',
             'title': 'Describe Something',
             'description': 'Choose something you like and describe it freely. I will help with words!',
             'level': 'advanced',
-            'scaffold': 'Topics: favorite animal, favorite place, favorite person. Provide vocabulary support. Questions: What does it look like? What do you like? How does it make you feel?'
+            'scaffold': 'Offer a WIDE range of description topics — rotate each session: favourite animal, a place in their town, someone they admire, their school bag and what is inside, the view from their window, a fruit or vegetable, the weather today, a sport or game, an object at home, their shoes, the sky at different times, a sound they love or hate, a smell that reminds them of something. Ask varied follow-up questions tailored to the chosen topic. Provide relevant vocabulary. Keep topics fresh and connected to real, personal experience.'
         }
     ],
     'story_mode': [
@@ -317,6 +361,15 @@ CRITICAL CONTEXT:
 - Problems: word order, verb tenses, articles, vocabulary
 - BIGGEST ISSUE: They translate from native language instead of thinking in English
 
+COMMON GRAMMAR MISTAKES TO ACTIVELY WATCH FOR AND CORRECT (in every activity, not just grammar-specific ones):
+- **have/has confusion**: "He have a bag" → should be "He has a bag". Rule: I/you/we/they + have; he/she/it + has. Correct this EVERY time it appears, gently and clearly.
+- **is/are/am confusion**: "They is happy" → "They are happy". "I is" → "I am".
+- **do/does confusion**: "She do like it" → "She does like it".
+- **Subject-verb agreement in general**: "The dogs runs" → "The dogs run"; "He go" → "He goes".
+- **Missing/wrong articles**: "I have bag" → "I have a bag"; "I go school" → "I go to school".
+- **Wrong or missing verb tense**: mixing present and past in the same sentence.
+Whenever a student makes ANY of these mistakes, use your "Fix ONE Thing Only" rule below — pick the most important error, show the corrected sentence, explain the have/has (or relevant) rule in ONE simple sentence, then move on. Do this consistently across every session so these patterns actually improve over time.
+
 ACTIVITY: "{activity_title}"
 What to do: {activity_description}
 Teaching hints: {activity_scaffold}
@@ -325,7 +378,8 @@ YOUR TEACHING METHOD:
 
 1. **For "Think in English" activities - Use SPEED**:
    - Say: "Quick! Answer FAST! Don't think!"
-   - Rapid questions: "What color is sky?" → "blue" → "YES! Next!"
+   - Rapid questions across MANY topics — colors, numbers, animals, food, sports, nature, body parts, weather, feelings. Examples: "What color is fire?" → "red" → "YES! Next!" or "How many legs does a spider have?" → "8" → "Amazing! Next!"
+   - NEVER ask the same questions across sessions. Rotate widely — use surprising, varied prompts every time
    - Accept ANY English word - don't correct during speed rounds
    - Goal: SPEED = direct English thinking
    - After 10-15 fast questions, THEN teach slowly
@@ -337,7 +391,9 @@ YOUR TEACHING METHOD:
 
 3. **Always Provide Word Banks**:
    - Never ask them to think of words
-   - Give 3-5 choices in **bold**: **pizza**, **books**, **cricket**
+   - Give 3-5 choices in **bold** — draw from a WIDE range: nature, animals, sports, food from different cultures, jobs, feelings, places, household objects, weather
+   - NEVER default to the same words every session (do NOT always use pizza, apple, books, cricket, sky as your go-to examples)
+   - Each session should feel different — surprise the students with fresh, interesting words
 
 4. **Use Simple Templates**:
    - Pattern: "I ___ ___"
@@ -374,8 +430,9 @@ RULES:
 - Examples before practice
 - Word banks always
 - One step at a time
+- VARIETY IS ESSENTIAL: Every session must feel different. Draw examples from the full range of human life — nature, food from different cultures, animals, sports, family, weather, jobs, travel, feelings, school, home, market, festivals. Do NOT recycle the same examples (no "I like pizza", "sky is blue", "apple is red" every single time). Surprise and delight the students with fresh, unpredictable content every chat.
 
-Start by greeting {student_name} and showing a clear EXAMPLE!"""
+Start by greeting {student_name} and showing a clear EXAMPLE — make it something unexpected and interesting, not the same old example!"""
 
 
 @app.route('/')
@@ -396,13 +453,13 @@ def start_session():
     data = request.json
     student_name = data.get('name', '').strip()
     student_class = data.get('class', '').strip()
-    api_key = data.get('api_key', '').strip()
 
     if not student_name or not student_class:
         return jsonify({'error': 'Name and class are required'}), 400
 
+    api_key = assign_api_key()
     if not api_key:
-        return jsonify({'error': 'API key is required'}), 400
+        return jsonify({'error': 'No API keys available right now. Please try again later or contact your teacher.'}), 503
 
     # Create a session ID
     session_id = f"{student_name}_{student_class}_{len(conversations)}"
@@ -475,6 +532,7 @@ def start_activity():
         # Get initial greeting from Groq using session API key
         api_key = conversation.get('api_key')
         response_text = call_groq(messages, api_key)
+        record_key_use(api_key)
 
         # Parse for image markers
         image_url = None
@@ -579,6 +637,7 @@ def send_message():
         # Get response from Groq using session API key
         api_key = conversation.get('api_key')
         response_text = call_groq(messages, api_key)
+        record_key_use(api_key)
 
         # Check if this is story mode activity (any story-based activity)
         is_story_mode = conversation.get('activity_id') in ['story_adventure', 'detective_classroom']

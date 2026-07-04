@@ -2,7 +2,6 @@
 let sessionId = null;
 let studentName = null;
 let studentClass = null;
-let apiKey = null;
 let currentActivity = null;
 let messageCount = 0;
 let maxMessages = 80;
@@ -13,7 +12,6 @@ const activityScreen = document.getElementById('activity-screen');
 const chatScreen = document.getElementById('chat-screen');
 const studentNameInput = document.getElementById('student-name');
 const studentClassInput = document.getElementById('student-class');
-const apiKeyInput = document.getElementById('api-key');
 const startBtn = document.getElementById('start-btn');
 const studentInfo = document.getElementById('student-info');
 const chatMessages = document.getElementById('chat-messages');
@@ -53,12 +51,6 @@ function setupEventListeners() {
     });
 
     studentClassInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            apiKeyInput.focus();
-        }
-    });
-
-    apiKeyInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
             startSession();
         }
@@ -114,19 +106,12 @@ function handleKeyDown(e) {
 async function startSession() {
     const name = studentNameInput.value.trim();
     const stdClass = studentClassInput.value.trim();
-    const key = apiKeyInput.value.trim();
 
     if (!name || !stdClass) {
         alert('Please enter both your name and class!');
         return;
     }
 
-    if (!key) {
-        alert('Please enter your Groq API key!');
-        return;
-    }
-
-    apiKey = key;
     showLoading(true);
 
     try {
@@ -137,8 +122,7 @@ async function startSession() {
             },
             body: JSON.stringify({
                 name: name,
-                class: stdClass,
-                api_key: key
+                class: stdClass
             })
         });
 
