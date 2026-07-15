@@ -4,11 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lexi 🦊 - English Learning Assistant</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Nunito:ital,wght@0,400;0,600;0,700;0,800;1,600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=3">
 </head>
 <body>
     <!-- Welcome Screen -->
     <div id="welcome-screen" class="screen active">
+        <canvas id="particles-welcome" class="particles-canvas"></canvas>
         <div class="welcome-container">
             <div class="mascot">🦊</div>
             <h1 class="app-title">Lexi</h1>
@@ -25,6 +29,29 @@
                     <input type="text" id="student-class" placeholder="e.g., 5, 6, 7, 8" autocomplete="off">
                 </div>
 
+                <div class="input-group">
+                    <label for="computer-number">What is your computer number?</label>
+                    <select id="computer-number">
+                        <option value="">Select computer number...</option>
+                        <option value="1">Computer 1</option>
+                        <option value="2">Computer 2</option>
+                        <option value="3">Computer 3</option>
+                        <option value="4">Computer 4</option>
+                        <option value="5">Computer 5</option>
+                        <option value="6">Computer 6</option>
+                        <option value="7">Computer 7</option>
+                        <option value="8">Computer 8</option>
+                        <option value="9">Computer 9</option>
+                        <option value="10">Computer 10</option>
+                        <option value="11">Computer 11</option>
+                        <option value="12">Computer 12</option>
+                        <option value="13">Computer 13</option>
+                        <option value="14">Computer 14</option>
+                        <option value="15">Computer 15</option>
+                    </select>
+                    <span class="input-hint-small">Check the number sticker on your computer</span>
+                </div>
+
                 <button id="start-btn" class="primary-btn">
                     <span>Continue</span>
                     <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
@@ -37,6 +64,7 @@
 
     <!-- Activity Selection Screen -->
     <div id="activity-screen" class="screen">
+        <canvas id="particles-activity" class="particles-canvas"></canvas>
         <div class="activity-container">
             <div class="activity-header">
                 <div>
@@ -100,8 +128,11 @@
                     </div>
                 </div>
                 <div class="header-right">
-                    <div class="message-counter">
-                        <span id="message-count">0</span>/<span id="max-messages">80</span>
+                    <div class="score-display" id="score-display">
+                        <span class="score-rank" id="score-rank">Bronze</span>
+                        <span class="score-streak hidden" id="score-streak" title="Accuracy streak"></span>
+                        <span class="score-value" id="score-value">0 pts</span>
+                        <button id="how-it-works-btn" class="how-it-works-btn" title="How do points work?">?</button>
                     </div>
                     <button id="back-btn" class="secondary-btn">
                         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -139,6 +170,62 @@
         <div class="loading-spinner"></div>
     </div>
 
+    <!-- How Points Work Modal -->
+    <div id="how-it-works-modal" class="modal-overlay hidden">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h2>How Points Work 🎮</h2>
+                <button id="how-it-works-close" class="modal-close" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="modal-intro">Every message you send can earn points. Here's how:</p>
+
+                <div class="modal-section">
+                    <h3>📝 Base Points</h3>
+                    <p>Harder activities are worth more points from the start:</p>
+                    <ul>
+                        <li>Beginner — 8 pts</li>
+                        <li>Intermediate — 14 pts</li>
+                        <li>Advanced — 22 pts</li>
+                        <li>Story Mode — 30 pts</li>
+                    </ul>
+                </div>
+
+                <div class="modal-section">
+                    <h3>🔥 Streak Bonus</h3>
+                    <p>Write 3+ correct sentences in a row without a mistake, and you'll earn a growing bonus. One mistake resets the streak — so accuracy matters!</p>
+                </div>
+
+                <div class="modal-section">
+                    <h3>✅ Self-Correction Bonus</h3>
+                    <p>If Lexi points out a mistake and you get it right on your next try, you get bonus points for actually learning from the feedback.</p>
+                </div>
+
+                <div class="modal-section">
+                    <h3>📚 Vocabulary Bonus</h3>
+                    <p>Using new words you haven't used yet this session earns a small bonus. Mix it up!</p>
+                </div>
+
+                <div class="modal-section">
+                    <h3>🏆 Ranks</h3>
+                    <p>Your total points (plus trying harder activities) level you up through ranks:</p>
+                    <div class="rank-ladder">
+                        <span class="score-rank rank-bronze">Bronze</span>
+                        <span class="score-rank rank-silver">Silver</span>
+                        <span class="score-rank rank-gold">Gold</span>
+                        <span class="score-rank rank-platinum">Platinum</span>
+                        <span class="score-rank rank-diamond">Diamond</span>
+                        <span class="score-rank rank-crown">Crown</span>
+                        <span class="score-rank rank-ace">Ace</span>
+                        <span class="score-rank rank-conqueror">Conqueror</span>
+                    </div>
+                    <p class="modal-note">Gold and above need you to try harder activities, not just Beginner ones. <strong>Conqueror</strong> is the rarest rank — you need a huge score, Story Mode experience, AND a 10-message clean streak. Very few reach it!</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='particles.js') }}"></script>
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>

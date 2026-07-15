@@ -3,8 +3,6 @@ let sessionId = null;
 let studentName = null;
 let studentClass = null;
 let currentActivity = null;
-let messageCount = 0;
-let maxMessages = 80;
 
 // DOM Elements
 const welcomeScreen = document.getElementById('welcome-screen');
@@ -12,6 +10,7 @@ const activityScreen = document.getElementById('activity-screen');
 const chatScreen = document.getElementById('chat-screen');
 const studentNameInput = document.getElementById('student-name');
 const studentClassInput = document.getElementById('student-class');
+const computerNumberInput = document.getElementById('computer-number');
 const startBtn = document.getElementById('start-btn');
 const studentInfo = document.getElementById('student-info');
 const chatMessages = document.getElementById('chat-messages');
@@ -21,10 +20,13 @@ const sendBtn = document.getElementById('send-btn');
 const backBtn = document.getElementById('back-btn');
 const activityStatus = document.getElementById('activity-status');
 const loading = document.getElementById('loading');
-const messageCountEl = document.getElementById('message-count');
-const maxMessagesEl = document.getElementById('max-messages');
-const messageCounter = document.querySelector('.message-counter');
 const newSessionBtn = document.getElementById('new-session-btn');
+const scoreRankEl = document.getElementById('score-rank');
+const scoreValueEl = document.getElementById('score-value');
+const streakEl = document.getElementById('score-streak');
+const howItWorksBtn = document.getElementById('how-it-works-btn');
+const howItWorksModal = document.getElementById('how-it-works-modal');
+const howItWorksClose = document.getElementById('how-it-works-close');
 
 // Activity containers
 const beginnerActivities = document.getElementById('beginner-activities');
@@ -52,7 +54,7 @@ function setupEventListeners() {
 
     studentClassInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
-            startSession();
+            computerNumberInput.focus();
         }
     });
 
@@ -72,13 +74,21 @@ function setupEventListeners() {
         chatMessages.style.backgroundImage = '';
         messageInput.disabled = false;
         sendBtn.disabled = false;
-        // Don't reset counter - it's global per session
     });
 
     // New Session button
-    newSessionBtn.addEventListener('click', () => {
-        if (confirm('Start a new session? This will clear all progress and reset the counter.')) {
-            location.reload();
+    newSessionBtn.addEventListener('click', showSessionRecap);
+
+    // How Points Work modal
+    howItWorksBtn.addEventListener('click', () => {
+        howItWorksModal.classList.remove('hidden');
+    });
+    howItWorksClose.addEventListener('click', () => {
+        howItWorksModal.classList.add('hidden');
+    });
+    howItWorksModal.addEventListener('click', (e) => {
+        if (e.target === howItWorksModal) {
+            howItWorksModal.classList.add('hidden');
         }
     });
 }
@@ -106,9 +116,15 @@ function handleKeyDown(e) {
 async function startSession() {
     const name = studentNameInput.value.trim();
     const stdClass = studentClassInput.value.trim();
+    const computerNumber = computerNumberInput.value.trim();
 
     if (!name || !stdClass) {
         alert('Please enter both your name and class!');
+        return;
+    }
+
+    if (!computerNumber) {
+        alert('Please select your computer number!');
         return;
     }
 
@@ -122,7 +138,8 @@ async function startSession() {
             },
             body: JSON.stringify({
                 name: name,
-                class: stdClass
+                class: stdClass,
+                computer_number: computerNumber
             })
         });
 
@@ -250,19 +267,13 @@ async function startActivity(activityId, activityTitle, activityDescription) {
                 chatMessages.style.backgroundImage = '';
             }
 
-            // Update message counter
-            updateMessageCounter(data.message_count, data.max_messages);
-
             switchScreen('chat');
             if (activityDescription && activityId !== 'story_adventure') {
                 addMessage('assistant', `**${activityTitle}**\n${activityDescription}`);
             }
             addMessage('assistant', data.message, data.image_url);
+            updateScoreDisplay(data.total_score, data.rank);
             focusInput(messageInput);
-        } else if (response.status === 403 && data.limit_reached) {
-            // Session limit reached
-            updateMessageCounter(data.message_count, data.max_messages);
-            alert(data.error);
         } else {
             alert(data.error || 'Failed to start activity.');
         }
@@ -310,14 +321,7 @@ async function sendMessage() {
 
         if (response.ok) {
             addMessage('assistant', data.message, data.image_url);
-
-            // Update message counter
-            updateMessageCounter(data.message_count, data.max_messages);
-        } else if (response.status === 403 && data.limit_reached) {
-            // Session limit reached
-            addMessage('assistant', data.error);
-            messageInput.disabled = true;
-            sendBtn.disabled = true;
+            updateScoreDisplay(data.total_score, data.rank, data.points_earned, data.streak);
         } else {
             addMessage('assistant', '❌ Sorry, I encountered an error. Please try again.');
         }
@@ -503,20 +507,152 @@ function focusInput(element) {
     setTimeout(() => element.focus(), 100);
 }
 
-// Update Message Counter
-function updateMessageCounter(count, max) {
-    messageCount = count;
-    maxMessages = max;
-    messageCountEl.textContent = count;
-    maxMessagesEl.textContent = max;
+// Update Score Display
+let lastKnownRank = null;
 
-    // Update counter color based on usage
-    messageCounter.classList.remove('warning', 'danger');
+function updateScoreDisplay(totalScore, rank, pointsEarned, streak) {
+    if (totalScore === undefined || !scoreValueEl) return;
 
-    const percentage = (count / max) * 100;
-    if (percentage >= 90) {
-        messageCounter.classList.add('danger');
-    } else if (percentage >= 70) {
-        messageCounter.classList.add('warning');
+    scoreValueEl.textContent = `${totalScore} pts`;
+
+    if (streak !== undefined && streakEl) {
+        if (streak >= 3) {
+            streakEl.textContent = `🔥${streak}`;
+            streakEl.classList.remove('hidden');
+        } else {
+            streakEl.classList.add('hidden');
+        }
     }
+
+    if (rank) {
+        const rankedUp = lastKnownRank && rank !== lastKnownRank;
+        scoreRankEl.textContent = rank;
+        scoreRankEl.className = `score-rank rank-${rank.toLowerCase()}`;
+
+        if (rankedUp) {
+            showRankUpCelebration(rank);
+        }
+        lastKnownRank = rank;
+    }
+
+    if (pointsEarned) {
+        const popup = document.createElement('span');
+        popup.className = 'score-popup';
+        popup.textContent = `+${pointsEarned}`;
+        scoreValueEl.parentElement.appendChild(popup);
+        setTimeout(() => popup.remove(), 1200);
+    }
+}
+
+// Rank-Up Celebration
+function showRankUpCelebration(rank) {
+    const overlay = document.createElement('div');
+    overlay.className = 'rankup-overlay';
+    overlay.innerHTML = `
+        <div class="rankup-card">
+            <div class="rankup-mascot">🦊</div>
+            <div class="rankup-label">Rank Up!</div>
+            <div class="rankup-rank rank-${rank.toLowerCase()}">${rank}</div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    setTimeout(() => overlay.classList.add('fade-out'), 2200);
+    setTimeout(() => overlay.remove(), 2700);
+}
+
+// Session Recap
+async function showSessionRecap() {
+    if (!sessionId) {
+        location.reload();
+        return;
+    }
+
+    showLoading(true);
+    try {
+        const response = await fetch('/end_session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: sessionId })
+        });
+        const data = await response.json();
+        showLoading(false);
+
+        if (!response.ok) {
+            location.reload();
+            return;
+        }
+
+        renderSessionRecap(data);
+    } catch (error) {
+        console.error('Error:', error);
+        showLoading(false);
+        location.reload();
+    }
+}
+
+function renderSessionRecap(data) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.id = 'recap-modal';
+
+    const activitiesList = data.activities_tried.length
+        ? data.activities_tried.map(a => `<li>${a}</li>`).join('')
+        : '<li>No activities completed yet</li>';
+
+    overlay.innerHTML = `
+        <div class="modal-box recap-box">
+            <div class="modal-header">
+                <h2>Session Recap 🏁</h2>
+            </div>
+            <div class="modal-body">
+                <div class="recap-hero">
+                    <div class="recap-mascot">🦊</div>
+                    <div class="recap-name">${data.name || 'Great job'}!</div>
+                    <span class="score-rank rank-${data.rank.toLowerCase()} recap-rank">${data.rank}</span>
+                </div>
+
+                <div class="recap-stats-grid">
+                    <div class="recap-stat">
+                        <span class="recap-stat-value">${data.total_score}</span>
+                        <span class="recap-stat-label">Total Points</span>
+                    </div>
+                    <div class="recap-stat">
+                        <span class="recap-stat-value">${data.accuracy}%</span>
+                        <span class="recap-stat-label">Accuracy</span>
+                    </div>
+                    <div class="recap-stat">
+                        <span class="recap-stat-value">🔥${data.best_streak}</span>
+                        <span class="recap-stat-label">Best Streak</span>
+                    </div>
+                    <div class="recap-stat">
+                        <span class="recap-stat-value">${data.words_learned}</span>
+                        <span class="recap-stat-label">Words Learned</span>
+                    </div>
+                    <div class="recap-stat">
+                        <span class="recap-stat-value">${data.total_messages}</span>
+                        <span class="recap-stat-label">Messages Sent</span>
+                    </div>
+                    <div class="recap-stat">
+                        <span class="recap-stat-value">${data.activities_tried.length}</span>
+                        <span class="recap-stat-label">Activities Tried</span>
+                    </div>
+                </div>
+
+                <div class="modal-section">
+                    <h3>📋 Activities Completed</h3>
+                    <ul class="recap-activities-list">${activitiesList}</ul>
+                </div>
+
+                <button id="recap-close-btn" class="primary-btn">
+                    <span>Start New Session</span>
+                </button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+    document.getElementById('recap-close-btn').addEventListener('click', () => {
+        location.reload();
+    });
 }

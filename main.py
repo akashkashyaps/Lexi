@@ -5,7 +5,6 @@ Main application file
 import os
 import re
 import webbrowser
-from datetime import date
 from threading import Timer
 from flask import Flask, render_template, request, jsonify
 from dotenv import load_dotenv
@@ -20,44 +19,22 @@ app = Flask(__name__)
 # Configure Groq API
 GROQ_MODEL = os.getenv('GROQ_MODEL', 'moonshotai/kimi-k2-instruct-0905')
 
-# Pool of Groq API keys shared across all classes/sessions
-API_KEY_POOL = [
-    key for key in (os.getenv(f'GROQ_API_KEY_{i}') for i in range(1, 11))
-    if key and not key.startswith('your_key_')
-]
-
-# Daily request budget per key (Groq free tier is 1000/day; keep a safety buffer)
-DAILY_KEY_LIMIT = int(os.getenv('GROQ_DAILY_KEY_LIMIT', '950'))
-
-# Tracks {api_key: {'date': 'YYYY-MM-DD', 'count': N}}
-key_usage = {}
+# Fixed 1-to-1 mapping: each physical computer picks a number (1-15) and
+# always uses that same dedicated key — no sharing, no auto-balancing.
+# This avoids multiple concurrent students ever competing for one key's
+# per-minute token budget.
+COMPUTER_KEYS = {
+    str(i): os.getenv(f'GROQ_API_KEY_{i}')
+    for i in range(1, 16)
+}
 
 
-def assign_api_key():
-    """Pick the least-used API key that's still under today's limit"""
-    if not API_KEY_POOL:
-        return None
-
-    today = date.today().isoformat()
-    best_key, best_count = None, None
-
-    for key in API_KEY_POOL:
-        entry = key_usage.get(key)
-        count = entry['count'] if entry and entry['date'] == today else 0
-        if count < DAILY_KEY_LIMIT and (best_count is None or count < best_count):
-            best_key, best_count = key, count
-
-    return best_key
-
-
-def record_key_use(api_key):
-    """Increment today's usage count for a key"""
-    today = date.today().isoformat()
-    entry = key_usage.get(api_key)
-    if entry and entry['date'] == today:
-        entry['count'] += 1
-    else:
-        key_usage[api_key] = {'date': today, 'count': 1}
+def get_key_for_computer(computer_number):
+    """Return the dedicated API key for a given computer number, if configured"""
+    key = COMPUTER_KEYS.get(str(computer_number))
+    if key and not key.startswith('your_key_'):
+        return key
+    return None
 
 
 # Configure Unsplash API
@@ -65,6 +42,23 @@ UNSPLASH_ACCESS_KEY = os.getenv('UNSPLASH_ACCESS_KEY')
 
 # Store conversation history (in-memory for offline use)
 conversations = {}
+
+# Number of recent user/assistant exchanges to keep when trimming history
+# for long-running sessions (keeps each Groq call's token size bounded)
+HISTORY_WINDOW = 10
+
+
+def trim_history(messages):
+    """Keep the system message plus only the last HISTORY_WINDOW exchanges,
+    so a long session's token size per call stays bounded. The task/rules
+    always survive trimming since they live in the system message, not
+    in the turns being dropped."""
+    system_message = messages[0]
+    turns = messages[1:]
+    max_turns = HISTORY_WINDOW * 2
+    if len(turns) <= max_turns:
+        return messages
+    return [system_message] + turns[-max_turns:]
 
 
 def call_groq(messages, api_key):
@@ -120,54 +114,140 @@ def fetch_unsplash_image(search_term):
         return None
 
 
+# ==================== SCORING ====================
+
+# Base points per message, by activity difficulty tier — harder activities
+# are worth more from the start, rewarding students who attempt them
+BASE_POINTS_BY_LEVEL = {
+    'beginner': 8,
+    'intermediate': 14,
+    'advanced': 22,
+    'story': 30,
+}
+
+# BGMI-style rank ladder. Each rank needs a score threshold AND (for the
+# higher ranks) evidence the student attempted a harder activity tier —
+# so climbing requires real growth, not just grinding easy activities.
+RANK_LADDER = [
+    {'name': 'Bronze', 'score': 0, 'requires_level': None},
+    {'name': 'Silver', 'score': 40, 'requires_level': None},
+    {'name': 'Gold', 'score': 100, 'requires_level': 'intermediate'},
+    {'name': 'Platinum', 'score': 220, 'requires_level': 'advanced'},
+    {'name': 'Diamond', 'score': 400, 'requires_level': 'advanced'},
+    {'name': 'Crown', 'score': 700, 'requires_level': 'story'},
+    {'name': 'Ace', 'score': 1100, 'requires_level': 'story'},
+    {'name': 'Conqueror', 'score': 1600, 'requires_level': 'story', 'requires_clean_streak': 10},
+]
+
+# Difficulty tiers in ascending order, used to check "attempted at least X"
+LEVEL_ORDER = ['beginner', 'intermediate', 'advanced', 'story']
+
+# Phrases in Lexi's response that indicate she flagged a grammar mistake
+MISTAKE_KEYWORDS = [
+    'instead of', 'should be', 'correct way', 'small fix', 'not have',
+    'we use', 'the correct sentence', 'a small mistake', 'let\'s fix',
+]
+
+
+def level_at_least(level, minimum):
+    """True if `level` is at or beyond `minimum` in difficulty order"""
+    if not level or minimum not in LEVEL_ORDER:
+        return False
+    try:
+        return LEVEL_ORDER.index(level) >= LEVEL_ORDER.index(minimum)
+    except ValueError:
+        return False
+
+
+def compute_rank(conversation):
+    """Determine the current rank from score, difficulty attempted, and streak"""
+    score = conversation.get('score', 0)
+    highest_level = conversation.get('highest_level_attempted')
+    streak = conversation.get('accuracy_streak', 0)
+
+    current = RANK_LADDER[0]
+    for rank in RANK_LADDER:
+        if score < rank['score']:
+            break
+        if rank.get('requires_level') and not level_at_least(highest_level, rank['requires_level']):
+            break
+        if rank.get('requires_clean_streak') and streak < rank['requires_clean_streak']:
+            break
+        current = rank
+
+    return current['name']
+
+
+def detect_mistake_flagged(ai_response):
+    """Lightweight heuristic: did Lexi's reply flag a grammar mistake?"""
+    lower = ai_response.lower()
+    return any(phrase in lower for phrase in MISTAKE_KEYWORDS)
+
+
+def calculate_points(conversation, user_message, ai_response, activity_level):
+    """Score one exchange and update the conversation's running score/streak.
+
+    Rewards: difficulty attempted (base points scale with tier), sustained
+    accuracy (streak bonus), self-correction after a flagged mistake
+    (bonus next turn), and vocabulary variety (small bonus for new words).
+    """
+    base = BASE_POINTS_BY_LEVEL.get(activity_level, 8)
+    had_mistake = detect_mistake_flagged(ai_response)
+
+    points = base
+    breakdown = {'base': base}
+
+    # Self-correction bonus: last turn Lexi flagged a mistake, this turn
+    # is clean — the student actually applied the feedback
+    if conversation.get('last_message_had_mistake') and not had_mistake:
+        points += 6
+        breakdown['self_correction'] = 6
+
+    # Accuracy streak: consecutive clean messages build a growing bonus
+    if had_mistake:
+        conversation['accuracy_streak'] = 0
+        conversation['total_mistakes'] = conversation.get('total_mistakes', 0) + 1
+    else:
+        conversation['accuracy_streak'] = conversation.get('accuracy_streak', 0) + 1
+        conversation['total_correct_messages'] = conversation.get('total_correct_messages', 0) + 1
+        streak = conversation['accuracy_streak']
+        if streak >= 3:
+            streak_bonus = min(int(base * 0.5), streak * 2)
+            points += streak_bonus
+            breakdown['streak_bonus'] = streak_bonus
+
+    conversation['best_streak'] = max(conversation.get('best_streak', 0), conversation['accuracy_streak'])
+
+    # Vocabulary variety: small bonus for words not used earlier this session
+    used_vocab = conversation.setdefault('used_vocab', set())
+    new_words = {
+        w for w in re.findall(r"[a-zA-Z']+", user_message.lower())
+        if len(w) >= 4 and w not in used_vocab
+    }
+    if new_words:
+        vocab_bonus = min(len(new_words) * 2, 8)
+        points += vocab_bonus
+        breakdown['vocab_bonus'] = vocab_bonus
+    used_vocab.update(new_words)
+
+    conversation['last_message_had_mistake'] = had_mistake
+    conversation['score'] = conversation.get('score', 0) + points
+
+    if not conversation.get('highest_level_attempted') or level_at_least(activity_level, conversation['highest_level_attempted']):
+        conversation['highest_level_attempted'] = activity_level
+
+    return {
+        'points_earned': points,
+        'breakdown': breakdown,
+        'had_mistake': had_mistake,
+        'total_score': conversation['score'],
+        'streak': conversation['accuracy_streak'],
+        'rank': compute_rank(conversation)
+    }
+
+
 # Writing Activities Database
 ACTIVITIES = {
-    'think_english': [
-        {
-            'id': 'quick_response',
-            'title': 'Quick Response Game',
-            'description': 'Answer questions FAST! You have 3 seconds. Don\'t think - just type the first English word!',
-            'level': 'think_english',
-            'scaffold': 'Ask 15-20 rapid questions across MANY different topics each session — mix: colors of things around them (blood=red, banana=yellow, coal=black), numbers (wheels on a car, legs on a spider, months in a year), animals and their sounds or features, food temperatures or tastes, body parts and their actions, weather, sports, school objects, nature. NEVER repeat the same questions across sessions. Be unpredictable and surprising! Praise speed, not accuracy!'
-        },
-        {
-            'id': 'picture_words',
-            'title': 'Picture Association',
-            'description': 'I will describe a picture. You type English words you think of. No sentences needed!',
-            'level': 'think_english',
-            'scaffold': 'Describe vivid, VARIED scenes each session — use creative settings like a busy market, a rainy football match, a child flying a kite, a dog chasing a butterfly, a farmer picking mangoes, a student opening a lunchbox, a cat sleeping on a rooftop. NEVER use the same scene twice. Accept ANY English words they type. Then help build a sentence from their words.'
-        },
-        {
-            'id': 'word_chain',
-            'title': 'Word Chain Thinking',
-            'description': 'I say an English word. You type the FIRST English word that comes to your mind!',
-            'level': 'think_english',
-            'scaffold': 'Give 10 VARIED trigger words each session — draw from different categories: emotions (angry, excited, sad), places (jungle, beach, hospital, market), actions (jump, whisper, climb), weather (storm, fog, sunshine), animals, sports, objects, colors, seasons, jobs. Mix categories unpredictably. Student responds with any related English word. Build speed. Any related word is correct!'
-        }
-    ],
-    'foundation': [
-        {
-            'id': 'learn_words',
-            'title': 'Learn 10 Words',
-            'description': 'Learn 10 important English words with examples. We will practice using them!',
-            'level': 'foundation',
-            'scaffold': 'Each session, teach a DIFFERENT set of 10 useful everyday words — rotate between themes: home (door, sleep, cook, clean), outdoors (walk, rain, tree, street, bird), feelings (worried, proud, bored, excited), school (pencil, answer, question, read), family (mother, brother, older, younger), time (morning, yesterday, soon, after). Use each word in a fresh, interesting example sentence. Ask student to type the word, then use it themselves.'
-        },
-        {
-            'id': 'two_word_sentences',
-            'title': 'Make 2-Word Sentences',
-            'description': 'Let\'s make tiny sentences with just 2 words! Example: "I go" or "I like"',
-            'level': 'foundation',
-            'scaffold': 'Provide 5 word pairs each session, drawn from a WIDE range — not just "I go/eat/like" every time. Rotate verbs: I swim, I draw, I cook, I fall, I wake, I build, I wait, I dream, I clap, I hide. Student copies the pair, then tries their own using a fresh word bank of 5 verbs you have NOT already used this session.'
-        },
-        {
-            'id': 'yes_no',
-            'title': 'Yes/No Practice',
-            'description': 'Answer simple questions with just "Yes" or "No". Easy!',
-            'level': 'foundation',
-            'scaffold': 'Ask 10 yes/no questions each session from a WIDE variety of topics — mix: preferences (Do you like mangoes? Do you like swimming?), facts about the world (Is the moon round? Do fish live in water?), abilities (Can you run fast? Can you cook?), habits (Do you wake up early? Do you drink tea?), funny surprises (Can a cat fly? Do you eat the moon?). NEVER repeat the same questions. Keep students guessing! Celebrate every answer!'
-        }
-    ],
     'beginner': [
         {
             'id': 'complete_sentence',
@@ -453,13 +533,17 @@ def start_session():
     data = request.json
     student_name = data.get('name', '').strip()
     student_class = data.get('class', '').strip()
+    computer_number = data.get('computer_number', '').strip()
 
     if not student_name or not student_class:
         return jsonify({'error': 'Name and class are required'}), 400
 
-    api_key = assign_api_key()
+    if not computer_number:
+        return jsonify({'error': 'Please select your computer number'}), 400
+
+    api_key = get_key_for_computer(computer_number)
     if not api_key:
-        return jsonify({'error': 'No API keys available right now. Please try again later or contact your teacher.'}), 503
+        return jsonify({'error': f'No API key configured for computer {computer_number}. Please contact your teacher.'}), 503
 
     # Create a session ID
     session_id = f"{student_name}_{student_class}_{len(conversations)}"
@@ -472,7 +556,15 @@ def start_session():
         'activity': None,
         'messages': None,
         'message_count': 0,
-        'max_messages': 80
+        'score': 0,
+        'accuracy_streak': 0,
+        'best_streak': 0,
+        'total_correct_messages': 0,
+        'total_mistakes': 0,
+        'used_vocab': set(),
+        'activities_tried': set(),
+        'highest_level_attempted': None,
+        'last_message_had_mistake': False
     }
 
     return jsonify({
@@ -516,15 +608,6 @@ def start_activity():
         activity.get('scaffold', '')
     )
 
-    # Check global session limit BEFORE making API call
-    if conversation['message_count'] >= conversation['max_messages']:
-        return jsonify({
-            'error': 'Session limit reached! You have used 80 API calls. Great work! Please refresh the page to start a new session.',
-            'limit_reached': True,
-            'message_count': conversation['message_count'],
-            'max_messages': conversation['max_messages']
-        }), 403
-
     # Initialize message history for Groq
     messages = [{"role": "system", "content": activity_prompt}]
 
@@ -532,7 +615,6 @@ def start_activity():
         # Get initial greeting from Groq using session API key
         api_key = conversation.get('api_key')
         response_text = call_groq(messages, api_key)
-        record_key_use(api_key)
 
         # Parse for image markers
         image_url = None
@@ -546,17 +628,20 @@ def start_activity():
 
         # Update conversation
         conversation['activity'] = activity
+        conversation['activity_id'] = activity_id
         conversation['messages'] = messages
         conversation['messages'].append({"role": "assistant", "content": response_text})
+        conversation.setdefault('activities_tried', set()).add(activity['title'])
 
-        # Increment global session API call count
+        # Increment message count (informational, no longer a hard limit)
         conversation['message_count'] += 1
 
         return jsonify({
             'message': response_text,
             'image_url': image_url,
             'message_count': conversation['message_count'],
-            'max_messages': conversation['max_messages']
+            'total_score': conversation.get('score', 0),
+            'rank': compute_rank(conversation)
         })
 
     except Exception as e:
@@ -621,23 +706,17 @@ def send_message():
     if not messages:
         return jsonify({'error': 'No activity started'}), 400
 
-    # Check global session API call limit
-    if conversation['message_count'] >= conversation['max_messages']:
-        return jsonify({
-            'error': 'Session limit reached! You have used 80 API calls. Great work! Please refresh the page to start a new session.',
-            'limit_reached': True,
-            'message_count': conversation['message_count'],
-            'max_messages': conversation['max_messages']
-        }), 403
-
     try:
         # Add user message to history
         messages.append({"role": "user", "content": user_message})
 
         # Get response from Groq using session API key
         api_key = conversation.get('api_key')
-        response_text = call_groq(messages, api_key)
-        record_key_use(api_key)
+        # story_adventure needs full plot memory; trim history for everything
+        # else so a single call never grows unbounded over a long session
+        activity_id = conversation.get('activity_id')
+        groq_messages = messages if activity_id == 'story_adventure' else trim_history(messages)
+        response_text = call_groq(groq_messages, api_key)
 
         # Check if this is story mode activity (any story-based activity)
         is_story_mode = conversation.get('activity_id') in ['story_adventure', 'detective_classroom']
@@ -662,16 +741,52 @@ def send_message():
         # Increment message count (1 API call = user sends + AI responds)
         conversation['message_count'] += 1
 
+        # Score this exchange
+        activity_level = conversation.get('activity', {}).get('level', 'beginner')
+        score_result = calculate_points(conversation, user_message, response_text, activity_level)
+
         return jsonify({
             'message': response_text,
             'image_url': image_url,
             'message_count': conversation['message_count'],
-            'max_messages': conversation['max_messages']
+            'points_earned': score_result['points_earned'],
+            'total_score': score_result['total_score'],
+            'streak': score_result['streak'],
+            'rank': score_result['rank']
         })
 
     except Exception as e:
         print(f"Error: {e}")
         return jsonify({'error': 'Failed to get response. Please try again.'}), 500
+
+
+@app.route('/end_session', methods=['POST'])
+def end_session():
+    """Return a stats recap for the session, without ending anything server-side"""
+    data = request.json
+    session_id = data.get('session_id')
+
+    if not session_id or session_id not in conversations:
+        return jsonify({'error': 'Invalid session'}), 400
+
+    conversation = conversations[session_id]
+
+    total_correct = conversation.get('total_correct_messages', 0)
+    total_mistakes = conversation.get('total_mistakes', 0)
+    total_scored_messages = total_correct + total_mistakes
+    accuracy = round((total_correct / total_scored_messages) * 100) if total_scored_messages else 0
+
+    return jsonify({
+        'name': conversation.get('name'),
+        'total_score': conversation.get('score', 0),
+        'rank': compute_rank(conversation),
+        'best_streak': conversation.get('best_streak', 0),
+        'accuracy': accuracy,
+        'total_messages': conversation.get('message_count', 0),
+        'words_learned': len(conversation.get('used_vocab', set())),
+        'activities_tried': sorted(conversation.get('activities_tried', set())),
+        'highest_level_attempted': conversation.get('highest_level_attempted')
+    })
 
 
 def open_browser():
