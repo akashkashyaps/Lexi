@@ -185,7 +185,7 @@ async function startSession() {
             studentClass = data.class;
 
             // Show the student in the lobby's player card
-            if (window.Lobby) window.Lobby.setPlayer(studentName, studentClass, serverNumber);
+            if (window.Lobby) window.Lobby.setPlayer(studentName, studentClass, serverNumber, serverInput.selectedOptions[0].textContent);
 
             // Load activities
             await loadActivities();

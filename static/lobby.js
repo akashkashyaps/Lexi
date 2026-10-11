@@ -155,7 +155,10 @@
     /* ---------------- lobby rendering ---------------- */
     const TABS = ['learn', 'story', 'game', 'stats'];
     let gameArts = [];
-    let storyArts = [];
+    const STORY_COVERS = {
+        story_adventure: '/static/covers/story-adventure.jpg',
+        detective_classroom: '/static/covers/detective-classroom.jpg'
+    };
 
     function learnLevels() {
         if (!state.activities) return [];
@@ -182,7 +185,6 @@
         const c = $('lb-content');
         c.textContent = '';
         gameArts = [];
-        storyArts = [];
 
         if (locked()) {
             const head = el('div', 'lb-mode-head');
@@ -240,23 +242,27 @@
             head.appendChild(el('h3', '', 'Story'));
             head.appendChild(el('span', 'lb-hud', 'Chapter play'));
             c.appendChild(head);
-            const list = el('div', 'lb-stories');
+            // Same tiles as the Game tab, with each story's chat wallpaper as its cover
+            const grid = el('div', 'lb-games');
             items().forEach((a, i) => {
-                const b = el('button', 'lb-story lb-chamfer');
+                const b = el('button', 'lb-gart lb-chamfer');
                 b.type = 'button';
                 b.setAttribute('aria-pressed', String(i === state.sel));
-                const cv = el('canvas');
-                cv.setAttribute('aria-hidden', 'true');
-                b.appendChild(cv);
+                const img = el('img');
+                img.src = STORY_COVERS[a.id] || STORY_COVERS.story_adventure;
+                img.alt = '';
+                img.loading = 'lazy';
+                b.appendChild(img);
                 b.appendChild(el('div', 'shade'));
-                b.appendChild(el('div', 'lb-eyebrow', 'Story ' + (i + 1)));
-                b.appendChild(el('h4', '', stripEmoji(a.title)));
-                b.appendChild(el('p', '', a.description));
+                b.appendChild(el('span', 'sweep'));
+                b.appendChild(el('span', 'meta', 'Story ' + (i + 1) + ' · Chat with Lexi'));
+                b.appendChild(el('strong', '', stripEmoji(a.title)));
+                b.appendChild(el('span', 'gdesc', a.description));
                 b.addEventListener('click', () => { if (state.sel === i) start(); else { state.sel = i; render(); } });
-                list.appendChild(b);
-                storyArts.push({ cv, variant: i });
+                tilt(b);
+                grid.appendChild(b);
             });
-            c.appendChild(list);
+            c.appendChild(grid);
         } else if (state.tab === 'game') {
             const head = el('div', 'lb-mode-head');
             head.appendChild(el('h3', '', 'Game'));
@@ -431,7 +437,7 @@
             lobby: {
                 guest: state.guest, sel: state.sel, level: state.level, highest: state.highest, tried: [...state.tried],
                 score: state.score, rank: state.rank, streak: state.streak, bestStreak: state.bestStreak,
-                name: state.name, cls: state.cls, server: state.server
+                name: state.name, cls: state.cls, server: state.server, serverLabel: state.serverLabel
             }
         };
         try { sessionStorage.setItem(RETURN_KEY, JSON.stringify(snap)); } catch (e) { /* storage blocked: back goes to title */ }
@@ -500,7 +506,7 @@
             // tab or level button just clicked with the mouse) Enter starts the
             // current selection instead of re-pressing that button.
             const t = e.target;
-            if (t.matches && t.matches('.lb-card, .lb-gart, .lb-story, .lb-cta, #new-session-btn, a')) return;
+            if (t.matches && t.matches('.lb-card, .lb-gart, .lb-cta, #new-session-btn, a')) return;
             e.preventDefault();
             start();
         }
@@ -611,40 +617,12 @@
         c.fillStyle = '#c98a3f'; c.beginPath(); if (c.roundRect) c.roundRect(bxp - 34, ground - H * 0.16, 68, H * 0.09, 8); else c.rect(bxp - 34, ground - H * 0.16, 68, H * 0.09); c.fill();
         c.fillStyle = '#f0782b'; c.beginPath(); c.arc(bxp, ground - H * 0.23, H * 0.06, 0, Math.PI * 2); c.fill();
     }
-    function storyArt(c, W, H, t, variant) {
-        const night = variant % 2 === 0;
-        let g = c.createLinearGradient(0, 0, 0, H);
-        if (night) { g.addColorStop(0, '#0d1440'); g.addColorStop(0.6, '#2a2a7a'); g.addColorStop(1, '#4a2a6e'); }
-        else { g.addColorStop(0, '#1a0f2e'); g.addColorStop(0.6, '#3a1f4a'); g.addColorStop(1, '#5a2a3a'); }
-        c.fillStyle = g; c.fillRect(0, 0, W, H);
-        for (let i = 0; i < 60; i++) { c.fillStyle = 'rgba(255,245,220,' + (0.3 + 0.4 * Math.sin(t * 0.002 + i * 1.3)) + ')'; c.beginPath(); c.arc((i * 97.3) % W, (i * 53.7) % (H * 0.6), (i % 3) * 0.6 + 0.6, 0, Math.PI * 2); c.fill(); }
-        const mx = W * 0.78, my = H * 0.26, mr = Math.min(W, H) * 0.13;
-        g = c.createRadialGradient(mx, my, 0, mx, my, mr * 3); g.addColorStop(0, 'rgba(255,230,160,.5)'); g.addColorStop(1, 'rgba(255,230,160,0)');
-        c.fillStyle = g; c.fillRect(0, 0, W, H);
-        c.fillStyle = '#ffe9b0'; c.beginPath(); c.arc(mx, my, mr, 0, Math.PI * 2); c.fill();
-        c.fillStyle = night ? '#1a1550' : '#2a1428';
-        for (let i = 0; i < 11; i++) {
-            const w = W / 11, h = H * (0.2 + ((i * 37 + variant * 11) % 5) * 0.05), x = i * w;
-            c.fillRect(x, H - h, w - 3, h);
-            c.beginPath(); c.moveTo(x - 3, H - h); c.lineTo(x + w / 2 - 1.5, H - h - w * 0.5); c.lineTo(x + w, H - h); c.fill();
-            c.fillStyle = 'rgba(255,200,110,' + (0.6 + 0.4 * Math.sin(t * 0.003 + i)) + ')'; c.fillRect(x + w * 0.35, H - h * 0.6, w * 0.25, h * 0.12);
-            c.fillStyle = night ? '#1a1550' : '#2a1428';
-        }
-        // the mystery: a glowing door, or a detective's magnifying glass
-        const dx = W * 0.3, dy = H * 0.62, glow = 0.5 + 0.5 * Math.sin(t * 0.004);
-        g = c.createRadialGradient(dx, dy, 0, dx, dy, 90); g.addColorStop(0, 'rgba(104,228,255,' + (0.55 * glow + 0.2) + ')'); g.addColorStop(1, 'rgba(104,228,255,0)');
-        c.fillStyle = g; c.fillRect(0, 0, W, H);
-        if (night) { c.fillStyle = '#bff4ff'; c.fillRect(dx - 16, dy - 30, 32, 52); }
-        else { c.strokeStyle = '#bff4ff'; c.lineWidth = 6; c.beginPath(); c.arc(dx, dy - 6, 20, 0, Math.PI * 2); c.stroke(); c.beginPath(); c.moveTo(dx + 14, dy + 8); c.lineTo(dx + 34, dy + 28); c.stroke(); }
-    }
-
     function frame(t) {
         if (!document.body.classList.contains('lb-in-chat')) {
             drawBg(t);
             if ($('activity-screen').classList.contains('active')) {
                 const tt = reduceMotion ? 0 : t;
                 for (const a of gameArts) { const k = fit(a.cv); if (k) (a.id === 'runner' ? runnerArt : catcherArt)(k.c, k.W, k.H, tt); }
-                for (const s of storyArts) { const k = fit(s.cv); if (k) storyArt(k.c, k.W, k.H, tt, s.variant); }
             }
         }
         requestAnimationFrame(frame);
@@ -668,13 +646,16 @@
             if (!lv.includes(state.level)) state.level = lv[0] || 'beginner';
             render();
         },
-        setPlayer(name, cls, server) {
+        // server is the real server id (sent to the app); label is what the student
+        // saw in the list, e.g. "Server 3" (working servers are numbered in order)
+        setPlayer(name, cls, server, label) {
             state.guest = false;
             state.name = name;
             state.cls = cls;
             state.server = server;
+            state.serverLabel = label || 'Server ' + server;
             $('lb-name').textContent = name;
-            $('lb-meta').textContent = 'Class ' + cls + ' · Server ' + server;
+            $('lb-meta').textContent = 'Class ' + cls + ' · ' + state.serverLabel;
             $('lb-hero-line').textContent = 'Ready when you are, ' + name + '!';
             $('new-session-btn').lastElementChild.textContent = 'End session';
             setTab('learn');
@@ -695,7 +676,7 @@
         // after putting the lobby back on the Game tab where the player left it.
         takeReturn,
         restore(l) {
-            if (!l.guest && l.name) this.setPlayer(l.name, l.cls, l.server);
+            if (!l.guest && l.name) this.setPlayer(l.name, l.cls, l.server, l.serverLabel);
             Object.assign(state, {
                 level: l.level || state.level, highest: l.highest || null, tried: new Set(l.tried || []),
                 score: l.score || 0, rank: l.rank || state.rank, streak: l.streak || 0, bestStreak: l.bestStreak || 0
