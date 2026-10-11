@@ -16,25 +16,59 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# Configure Groq API
-GROQ_MODEL = os.getenv('GROQ_MODEL', 'moonshotai/kimi-k2-instruct-0905')
-
-# Fixed 1-to-1 mapping: each physical computer picks a number (1-15) and
-# always uses that same dedicated key — no sharing, no auto-balancing.
-# This avoids multiple concurrent students ever competing for one key's
-# per-minute token budget.
-COMPUTER_KEYS = {
-    str(i): os.getenv(f'GROQ_API_KEY_{i}')
-    for i in range(1, 16)
-}
+GROQ_MODEL = os.getenv('GROQ_MODEL', 'openai/gpt-oss-120b')
+GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
+MAX_SERVERS = 15
 
 
-def get_key_for_computer(computer_number):
-    """Return the dedicated API key for a given computer number, if configured"""
-    key = COMPUTER_KEYS.get(str(computer_number))
-    if key and not key.startswith('your_key_'):
-        return key
-    return None
+def _real(value):
+    """A configured value, or None for blanks and .env placeholders"""
+    value = (value or '').strip()
+    return value if value and not value.startswith('your') else None
+
+
+def load_servers():
+    """AI servers students pick from, numbered 1..N.
+
+    Each server is one key on one provider, set in the environment as
+        SERVER_<n>_KEY       the API key (required)
+        SERVER_<n>_TYPE      groq (default) or azure
+        SERVER_<n>_MODEL     model / deployment name (groq default: GROQ_MODEL)
+        SERVER_<n>_ENDPOINT  base URL, for azure (…/openai/v1)
+    A student keeps the same server for the whole session, so no two
+    classes ever compete for one key's per-minute budget unless they
+    pick the same number. Older GROQ_API_KEY_<n> settings still work
+    when no SERVER_ settings exist.
+    """
+    servers = {}
+    for n in range(1, MAX_SERVERS + 1):
+        key = _real(os.getenv(f'SERVER_{n}_KEY'))
+        if not key:
+            continue
+        kind = (os.getenv(f'SERVER_{n}_TYPE') or 'groq').strip().lower()
+        model = _real(os.getenv(f'SERVER_{n}_MODEL')) or (GROQ_MODEL if kind == 'groq' else None)
+        endpoint = _real(os.getenv(f'SERVER_{n}_ENDPOINT'))
+        if kind == 'groq':
+            url = GROQ_URL
+        elif kind == 'azure' and endpoint and model:
+            url = endpoint.rstrip('/') + '/chat/completions'
+        else:
+            print(f'SERVER_{n} skipped: azure servers need SERVER_{n}_ENDPOINT and SERVER_{n}_MODEL')
+            continue
+        servers[str(n)] = {'type': kind, 'key': key, 'model': model, 'url': url}
+    if not servers:
+        legacy = [_real(os.getenv(f'GROQ_API_KEY_{n}')) for n in range(1, MAX_SERVERS + 1)]
+        for n, key in enumerate([k for k in legacy if k], start=1):
+            servers[str(n)] = {'type': 'groq', 'key': key, 'model': GROQ_MODEL, 'url': GROQ_URL}
+    return servers
+
+
+SERVERS = load_servers()
+
+
+def get_server(number):
+    """The server a student picked, or None if that number isn't configured"""
+    return SERVERS.get(str(number))
 
 
 # Configure Unsplash API
@@ -61,32 +95,35 @@ def trim_history(messages):
     return [system_message] + turns[-max_turns:]
 
 
-def call_groq(messages, api_key):
-    """Call Groq API with conversation history"""
-    try:
-        response = requests.post(
-            url="https://api.groq.com/openai/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "model": GROQ_MODEL,
-                "messages": messages,
-                "temperature": 0.7,
-                "max_tokens": 1024
-            }
-        )
+def server_request(server, messages, max_tokens=1024):
+    """POST a chat request to a server; returns the raw response"""
+    if server['type'] == 'azure':
+        # gpt-5 family: reasoning models with a fixed temperature, and their
+        # thinking counts against the token limit, so give it room.
+        body = {'model': server['model'], 'messages': messages,
+                'max_completion_tokens': max(max_tokens * 4, 512), 'reasoning_effort': 'low'}
+        headers = {'api-key': server['key'], 'Authorization': f"Bearer {server['key']}"}
+    else:
+        body = {'model': server['model'], 'messages': messages, 'temperature': 0.7, 'max_tokens': max_tokens}
+        headers = {'Authorization': f"Bearer {server['key']}"}
+    headers['Content-Type'] = 'application/json'
+    return requests.post(server['url'], headers=headers, json=body, timeout=90)
 
+
+def call_ai(messages, server):
+    """Send the conversation to the student's server and return Lexi's reply"""
+    try:
+        response = server_request(server, messages)
         response.raise_for_status()
-        data = response.json()
-        content = data['choices'][0]['message']['content']
+        content = response.json()['choices'][0]['message']['content'] or ''
         # Strip reasoning-model <think> blocks before showing output to students
         content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL).strip()
+        if not content:
+            raise ValueError('empty reply from server')
         return content
 
     except Exception as e:
-        print(f"Groq API Error: {e}")
+        print(f"AI server error ({server['type']}): {e}")
         raise
 
 
@@ -518,7 +555,7 @@ Start by greeting {student_name} and showing a clear EXAMPLE — make it somethi
 @app.route('/')
 def index():
     """Render the main page"""
-    return render_template('index.html')
+    return render_template('index.html', servers=list(SERVERS))
 
 
 # Arcade games: self-contained static pages. Served as-is rather than through
@@ -557,17 +594,17 @@ def start_session():
     data = request.json
     student_name = data.get('name', '').strip()
     student_class = data.get('class', '').strip()
-    computer_number = data.get('computer_number', '').strip()
+    server_number = str(data.get('server', '')).strip()
 
     if not student_name or not student_class:
         return jsonify({'error': 'Name and class are required'}), 400
 
-    if not computer_number:
-        return jsonify({'error': 'Please select your computer number'}), 400
+    if not server_number:
+        return jsonify({'error': 'Please pick a server'}), 400
 
-    api_key = get_key_for_computer(computer_number)
-    if not api_key:
-        return jsonify({'error': f'No API key configured for computer {computer_number}. Please contact your teacher.'}), 503
+    server = get_server(server_number)
+    if not server:
+        return jsonify({'error': f'Server {server_number} is not set up. Please pick another server or ask your teacher.'}), 503
 
     # Create a session ID
     session_id = f"{student_name}_{student_class}_{len(conversations)}"
@@ -576,7 +613,7 @@ def start_session():
     conversations[session_id] = {
         'name': student_name,
         'class': student_class,
-        'api_key': api_key,
+        'server': server_number,
         'activity': None,
         'messages': None,
         'message_count': 0,
@@ -632,13 +669,12 @@ def start_activity():
         activity.get('scaffold', '')
     )
 
-    # Initialize message history for Groq
+    # Initialize message history for the AI server
     messages = [{"role": "system", "content": activity_prompt}]
 
     try:
-        # Get initial greeting from Groq using session API key
-        api_key = conversation.get('api_key')
-        response_text = call_groq(messages, api_key)
+        # Get the opening message from the student's server
+        response_text = call_ai(messages, get_server(conversation['server']))
 
         # Parse for image markers
         image_url = None
@@ -734,13 +770,13 @@ def send_message():
         # Add user message to history
         messages.append({"role": "user", "content": user_message})
 
-        # Get response from Groq using session API key
-        api_key = conversation.get('api_key')
+        # Get the reply from the student's server
+        server = get_server(conversation['server'])
         # story_adventure needs full plot memory; trim history for everything
         # else so a single call never grows unbounded over a long session
         activity_id = conversation.get('activity_id')
-        groq_messages = messages if activity_id == 'story_adventure' else trim_history(messages)
-        response_text = call_groq(groq_messages, api_key)
+        ai_messages = messages if activity_id == 'story_adventure' else trim_history(messages)
+        response_text = call_ai(ai_messages, server)
 
         # Check if this is story mode activity (any story-based activity)
         is_story_mode = conversation.get('activity_id') in ['story_adventure', 'detective_classroom']
@@ -813,45 +849,38 @@ def end_session():
     })
 
 
+@app.route('/health/servers')
 @app.route('/health/keys')
-def health_keys():
-    """Which computer numbers have a key that Groq will actually accept.
+def health_servers():
+    """Which servers are set up, and (with ?live=1) which ones actually answer.
 
-    A key can be present in .env and still be dead (suspended org, revoked
-    token). Without this the failure only shows up as a student being unable
-    to use that machine at all.
+    A key can be present and still be dead (restricted org, revoked token).
+    Without this the failure only shows up as students being unable to use
+    that server at all.
     """
     check = request.args.get('live') == '1'
     report = {}
-
-    for number in range(1, 16):
-        key = get_key_for_computer(str(number))
-        if not key:
-            report[str(number)] = 'not configured'
-            continue
+    for number, server in SERVERS.items():
+        label = f"{server['type']} / {server['model']}"
         if not check:
-            report[str(number)] = 'configured'
+            report[number] = f'configured ({label})'
             continue
         try:
-            response = requests.post(
-                url="https://api.groq.com/openai/v1/chat/completions",
-                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-                json={"model": GROQ_MODEL, "messages": [{"role": "user", "content": "hi"}],
-                      "max_tokens": 8},
-                timeout=15
-            )
+            response = server_request(server, [{"role": "user", "content": "hi"}], max_tokens=16)
             if response.status_code == 200:
-                report[str(number)] = 'ok'
+                report[number] = f'ok ({label})'
             else:
-                detail = response.json().get('error', {})
-                report[str(number)] = f"FAILING ({detail.get('code') or response.status_code})"
+                try:
+                    detail = response.json().get('error', {})
+                except ValueError:
+                    detail = {}
+                report[number] = f"FAILING ({detail.get('code') or response.status_code}) ({label})"
         except requests.RequestException as error:
-            report[str(number)] = f'unreachable ({type(error).__name__})'
+            report[number] = f'unreachable ({type(error).__name__}) ({label})'
 
     return jsonify({
-        'model': GROQ_MODEL,
-        'computers': report,
-        'note': 'add ?live=1 to actually call Groq with each key'
+        'servers': report or 'none configured: set SERVER_1_KEY (see README)',
+        'note': 'add ?live=1 to actually call each server'
     })
 
 

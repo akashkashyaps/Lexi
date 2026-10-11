@@ -43,28 +43,15 @@
                             <input type="text" id="student-class" placeholder="e.g. 5" maxlength="5" autocomplete="off">
                         </div>
                         <div class="lb-field">
-                            <label for="computer-number">Computer</label>
-                            <select id="computer-number">
+                            <label for="server-number">Server</label>
+                            <select id="server-number">
                                 <option value="">Pick one</option>
-                                <option value="1">Computer 1</option>
-                                <option value="2">Computer 2</option>
-                                <option value="3">Computer 3</option>
-                                <option value="4">Computer 4</option>
-                                <option value="5">Computer 5</option>
-                                <option value="6">Computer 6</option>
-                                <option value="7">Computer 7</option>
-                                <option value="8">Computer 8</option>
-                                <option value="9">Computer 9</option>
-                                <option value="10">Computer 10</option>
-                                <option value="11">Computer 11</option>
-                                <option value="12">Computer 12</option>
-                                <option value="13">Computer 13</option>
-                                <option value="14">Computer 14</option>
-                                <option value="15">Computer 15</option>
+                                {% for n in servers %}<option value="{{ n }}">Server {{ n }}</option>
+                                {% endfor %}
                             </select>
                         </div>
                     </div>
-                    <span class="lb-help">Your computer number is on the sticker on your computer.</span>
+                    <span class="lb-help">Use the server your teacher gives you. If it doesn&rsquo;t work, try another one.</span>
                     <p id="lb-form-error" class="lb-error" role="alert" hidden></p>
                     <button id="start-btn" class="lb-cta lb-chamfer" type="button">Enter the lobby <kbd>ENTER</kbd></button>
                     <button id="lb-skip-game" class="lb-ghost" type="button">No details? <b>Play a game &rarr;</b></button>
@@ -231,7 +218,7 @@
         </div>
     </div>
 
-    <script src="{{ url_for('static', filename='script.js') }}?v=3"></script>
-    <script src="{{ url_for('static', filename='lobby.js') }}?v=3"></script>
+    <script src="{{ url_for('static', filename='script.js') }}?v=4"></script>
+    <script src="{{ url_for('static', filename='lobby.js') }}?v=4"></script>
 </body>
 </html>

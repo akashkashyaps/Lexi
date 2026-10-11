@@ -190,7 +190,7 @@
             c.appendChild(head);
             const box = el('div', 'lb-locked lb-glass lb-brackets lb-chamfer');
             box.appendChild(el('div', 'lb-eyebrow', 'Locked'));
-            box.appendChild(el('p', '', 'Enter your name, class and computer number to chat with Lexi, earn points and climb the ranks.'));
+            box.appendChild(el('p', '', 'Enter your name, class and server to chat with Lexi, earn points and climb the ranks.'));
             const btn = el('button', 'lb-cta lb-chamfer', 'Create your player');
             btn.type = 'button';
             btn.addEventListener('click', () => { window.switchScreen('welcome'); showSetup(); });
@@ -369,7 +369,7 @@
             eyebrow.appendChild(el('span', '', g.meta));
             d.appendChild(eyebrow);
             d.appendChild(el('h3', '', g.title));
-            d.appendChild(el('p', '', g.desc + '. Works without a name or computer number.'));
+            d.appendChild(el('p', '', g.desc + '. Works without a name or server.'));
             const best = readBest(g.bestKey);
             const facts = el('div', 'lb-facts');
             facts.appendChild(fact('Your best', best ? String(best) : 'Not played'));
@@ -431,7 +431,7 @@
             lobby: {
                 guest: state.guest, sel: state.sel, level: state.level, highest: state.highest, tried: [...state.tried],
                 score: state.score, rank: state.rank, streak: state.streak, bestStreak: state.bestStreak,
-                name: state.name, cls: state.cls, computer: state.computer
+                name: state.name, cls: state.cls, server: state.server
             }
         };
         try { sessionStorage.setItem(RETURN_KEY, JSON.stringify(snap)); } catch (e) { /* storage blocked: back goes to title */ }
@@ -668,13 +668,13 @@
             if (!lv.includes(state.level)) state.level = lv[0] || 'beginner';
             render();
         },
-        setPlayer(name, cls, computer) {
+        setPlayer(name, cls, server) {
             state.guest = false;
             state.name = name;
             state.cls = cls;
-            state.computer = computer;
+            state.server = server;
             $('lb-name').textContent = name;
-            $('lb-meta').textContent = 'Class ' + cls + ' · Computer ' + computer;
+            $('lb-meta').textContent = 'Class ' + cls + ' · Server ' + server;
             $('lb-hero-line').textContent = 'Ready when you are, ' + name + '!';
             $('new-session-btn').lastElementChild.textContent = 'End session';
             setTab('learn');
@@ -695,7 +695,7 @@
         // after putting the lobby back on the Game tab where the player left it.
         takeReturn,
         restore(l) {
-            if (!l.guest && l.name) this.setPlayer(l.name, l.cls, l.computer);
+            if (!l.guest && l.name) this.setPlayer(l.name, l.cls, l.server);
             Object.assign(state, {
                 level: l.level || state.level, highest: l.highest || null, tried: new Set(l.tried || []),
                 score: l.score || 0, rank: l.rank || state.rank, streak: l.streak || 0, bestStreak: l.bestStreak || 0
@@ -734,7 +734,7 @@
     document.querySelectorAll('.lb-tab').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
     $('lb-title').addEventListener('click', showSetup);
     $('lb-skip-game').addEventListener('click', () => window.Lobby.enterGuest());
-    $('computer-number').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('start-btn').click(); } });
+    $('server-number').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('start-btn').click(); } });
     grain();
     sizeBg();
     window.addEventListener('resize', sizeBg);

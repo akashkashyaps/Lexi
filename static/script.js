@@ -10,7 +10,7 @@ const activityScreen = document.getElementById('activity-screen');
 const chatScreen = document.getElementById('chat-screen');
 const studentNameInput = document.getElementById('student-name');
 const studentClassInput = document.getElementById('student-class');
-const computerNumberInput = document.getElementById('computer-number');
+const serverInput = document.getElementById('server-number');
 const startBtn = document.getElementById('start-btn');
 const chatMessages = document.getElementById('chat-messages');
 const chatContainer = document.querySelector('.chat-container');
@@ -55,7 +55,7 @@ async function restoreAfterGame() {
                 const r = await fetch('/start_session', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name: lobby.name, class: lobby.cls, computer_number: lobby.computer })
+                    body: JSON.stringify({ name: lobby.name, class: lobby.cls, server: lobby.server })
                 });
                 const data = await r.json();
                 if (!r.ok) return;
@@ -86,7 +86,7 @@ function setupEventListeners() {
 
     studentClassInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
-            computerNumberInput.focus();
+            serverInput.focus();
         }
     });
 
@@ -148,15 +148,15 @@ function handleKeyDown(e) {
 async function startSession() {
     const name = studentNameInput.value.trim();
     const stdClass = studentClassInput.value.trim();
-    const computerNumber = computerNumberInput.value.trim();
+    const serverNumber = serverInput.value.trim();
 
     if (!name || !stdClass) {
         showFormError('Please enter both your name and class!');
         return;
     }
 
-    if (!computerNumber) {
-        showFormError('Please select your computer number!');
+    if (!serverNumber) {
+        showFormError('Please pick a server!');
         return;
     }
 
@@ -173,7 +173,7 @@ async function startSession() {
             body: JSON.stringify({
                 name: name,
                 class: stdClass,
-                computer_number: computerNumber
+                server: serverNumber
             })
         });
 
@@ -185,7 +185,7 @@ async function startSession() {
             studentClass = data.class;
 
             // Show the student in the lobby's player card
-            if (window.Lobby) window.Lobby.setPlayer(studentName, studentClass, computerNumber);
+            if (window.Lobby) window.Lobby.setPlayer(studentName, studentClass, serverNumber);
 
             // Load activities
             await loadActivities();
