@@ -413,6 +413,7 @@
         }
         if (state.tab === 'game') {
             const g = GAMES[state.sel];
+            if (!state.guest) state.tried.add(g.id);
             saveForReturn();
             wipe(() => { window.location.href = g.href; });
             return;

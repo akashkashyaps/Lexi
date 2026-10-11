@@ -47,7 +47,10 @@ async function restoreAfterGame() {
         let alive = false;
         try {
             const r = await fetch('/session_status?session_id=' + encodeURIComponent(saved.sessionId));
-            alive = (await r.json()).alive;
+            const status = await r.json();
+            alive = status.alive;
+            // Games add points while the lobby is closed, so take the score from the app
+            if (alive) Object.assign(lobby, { score: status.total_score, rank: status.rank, streak: status.streak, bestStreak: Math.max(lobby.bestStreak || 0, status.best_streak || 0) });
         } catch (e) { /* treat as gone */ }
         if (!alive) {
             // The server restarted while they were playing: sign back in with the same details.

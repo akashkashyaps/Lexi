@@ -92,6 +92,7 @@ button:focus-visible,select:focus-visible,a:focus-visible{outline:3px solid var(
 .stat{background:var(--sand);border-radius:12px;padding:8px 10px}
 .stat span{display:block;font-size:11px;letter-spacing:.1em;text-transform:uppercase;font-weight:800;color:var(--lav)}
 .stat b{font-family:var(--font-display);font-weight:400;font-size:26px;font-variant-numeric:tabular-nums}
+.earned{margin:0;font-weight:800;color:#138057;background:#d9f6e9;border-radius:12px;padding:8px 12px}
 .tricky{margin:0;padding-left:20px;font-weight:700;display:flex;flex-direction:column;gap:2px}
 .tricky s{color:var(--chili)}
 .tricky mark{background:none;color:#138057;text-decoration:underline 3px var(--mint);text-underline-offset:3px}
@@ -189,6 +190,7 @@ button:focus-visible,select:focus-visible,a:focus-visible{outline:3px solid var(
         <div class="stat"><span>Right catches</span><b id="oRight">0</b></div>
         <div class="stat"><span>Best streak</span><b id="oStreak">0</b></div>
       </div>
+      <p class="earned" id="oEarned" hidden></p>
       <div id="oTrickyWrap"><p style="font-weight:800;margin-bottom:4px">Tricky words to remember</p><ul class="tricky" id="oTricky"></ul></div>
       <button class="btn" id="againBtn">Play again</button>
       <a class="back" href="/">&larr; Back to Lexi</a>
@@ -530,6 +532,25 @@ function drawLexi(){
   ctx.restore();
 }
 
+const GAME_ID='catcher';
+/* ---------- Lexi score ---------- */
+// A signed-in student's runs add to their Lexi score. The lobby leaves the
+// session id in sessionStorage before opening a game.
+function lexiSession(){try{const s=JSON.parse(sessionStorage.getItem('lexi-return'));return s&&s.session&&s.session.sessionId?s.session.sessionId:null;}catch(e){return null;}}
+function reportRun(correct,wrong,leaving){
+  const sid=lexiSession();if(!sid||!S||S.reported)return Promise.resolve(null);
+  S.reported=true;
+  const body=JSON.stringify({session_id:sid,game:GAME_ID,correct,wrong});
+  // keepalive lets the request finish even when the page is closing
+  return fetch('/game_result',{method:'POST',headers:{'Content-Type':'application/json'},body,keepalive:!!leaving}).then(r=>r.ok?r.json():null).catch(()=>null);
+}
+function showEarned(result){
+  const p=$('oEarned');p.hidden=false;
+  if(result)p.textContent='+'+result.points_earned+' points added to your Lexi score. You now have '+result.total_score+' points ('+result.rank+').';
+  else if(lexiSession())p.textContent='Could not reach Lexi to add your points.';
+  else p.textContent='Sign in to Lexi with your name to earn points from games.';
+}
+
 /* screens */
 function startRun(){
   if(!AC){try{AC=new (window.AudioContext||window.webkitAudioContext)();}catch(e){AC=null;}}
@@ -538,6 +559,7 @@ function startRun(){
 }
 function gameOver(won){
   mode='over';$('toast').hidden=true;
+  $('oEarned').hidden=true;reportRun(S.right,S.wrong).then(showEarned);
   $('overTitle').innerHTML=won?'You beat <em>every</em> rule!':'Out of lives!';
   $('oScore').textContent=S.score;$('oRules').textContent=S.rulesBeaten+'/'+S.rules.length;$('oRight').textContent=S.right;$('oStreak').textContent=S.best;
   const ul=$('oTricky');ul.innerHTML='';S.tricky.slice(0,5).forEach(x=>{const li=document.createElement('li');li.innerHTML='<s>'+esc(x.w)+'</s>: '+x.why;ul.appendChild(li);});
@@ -573,6 +595,8 @@ $('againBtn').addEventListener('click',startRun);
 $('resumeBtn').addEventListener('click',togglePause);
 $('exOk').addEventListener('click',closeExplain);
 $('pauseBtn').addEventListener('click',togglePause);
+// Leaving mid-run (back button, closing the tab) still counts the right answers so far
+window.addEventListener('pagehide',()=>{if(S&&mode!=='menu'&&S.right>0&&!S.reported)reportRun(S.right,S.wrong,true);});
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&mode==='run')togglePause();});
 
 /* boot */

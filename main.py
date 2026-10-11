@@ -636,8 +636,55 @@ def game_catcher():
 
 @app.route('/session_status')
 def session_status():
-    """Whether a session id is still live (the lobby checks this when a student comes back from a game)"""
-    return jsonify({'alive': request.args.get('session_id') in conversations})
+    """Whether a session id is still live, and its current score (the lobby checks
+    this when a student comes back from a game)"""
+    conversation = conversations.get(request.args.get('session_id'))
+    if not conversation:
+        return jsonify({'alive': False})
+    return jsonify({
+        'alive': True,
+        'total_score': conversation.get('score', 0),
+        'rank': compute_rank(conversation),
+        'streak': conversation.get('accuracy_streak', 0),
+        'best_streak': conversation.get('best_streak', 0)
+    })
+
+
+# Arcade games add to the same score as writing: 1 point per right answer,
+# capped per run so games help but never replace writing practice.
+GAME_TITLES = {'runner': 'Grammar Runner (game)', 'catcher': 'Word Catcher (game)'}
+GAME_POINTS_CAP = 25
+
+
+@app.route('/game_result', methods=['POST'])
+def game_result():
+    """Record one finished game run for a signed-in student"""
+    data = request.get_json(force=True, silent=True) or {}
+    conversation = conversations.get(data.get('session_id'))
+    if not conversation:
+        return jsonify({'error': 'Invalid session'}), 400
+    game = data.get('game')
+    if game not in GAME_TITLES:
+        return jsonify({'error': 'Unknown game'}), 400
+    try:
+        correct = max(0, min(500, int(data.get('correct', 0))))
+        wrong = max(0, min(500, int(data.get('wrong', 0))))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Bad result'}), 400
+
+    points = min(GAME_POINTS_CAP, correct)
+    conversation['score'] = conversation.get('score', 0) + points
+    conversation['games_played'] = conversation.get('games_played', 0) + 1
+    conversation['game_correct'] = conversation.get('game_correct', 0) + correct
+    conversation['game_wrong'] = conversation.get('game_wrong', 0) + wrong
+    conversation.setdefault('activities_tried', set()).add(GAME_TITLES[game])
+
+    return jsonify({
+        'points_earned': points,
+        'total_score': conversation['score'],
+        'rank': compute_rank(conversation),
+        'streak': conversation.get('accuracy_streak', 0)
+    })
 
 
 @app.route('/get_activities', methods=['GET'])
@@ -903,6 +950,7 @@ def end_session():
         'total_messages': conversation.get('message_count', 0),
         'words_learned': len(conversation.get('used_vocab', set())),
         'activities_tried': sorted(conversation.get('activities_tried', set())),
+        'games_played': conversation.get('games_played', 0),
         'highest_level_attempted': conversation.get('highest_level_attempted')
     })
 

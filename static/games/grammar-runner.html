@@ -90,6 +90,7 @@ button:focus-visible,a:focus-visible{outline:3px solid var(--mint);outline-offse
 .stat b{font-family:var(--font-display);font-weight:400;font-size:26px;font-variant-numeric:tabular-nums}
 .notice{border:3px dashed var(--chili);border-radius:14px;padding:10px 14px}
 .notice b{color:var(--chili)}
+.earned{margin:0;font-weight:800;color:#138057;background:#d9f6e9;border-radius:12px;padding:8px 12px}
 .fixes{margin:0;padding-left:20px;font-weight:700;display:flex;flex-direction:column;gap:2px}
 .fixes mark{background:none;color:#138057;text-decoration:underline 3px var(--mint);text-underline-offset:3px}
 @media (max-width:700px){
@@ -149,12 +150,13 @@ button:focus-visible,a:focus-visible{outline:3px solid var(--mint);outline-offse
   </div>
 
   <div class="overlay replay" id="replayScreen" hidden>
-    <div class="panel">
+    <div class="panel" role="alertdialog" aria-labelledby="replayTitle" aria-describedby="replayWhy">
       <h2 id="replayTitle">Trip!</h2>
       <div class="fix" id="replayFix"></div>
       <div class="why" id="replayWhy"></div>
       <div class="picked" id="replayPicked"></div>
-      <div class="timer"><i id="replayTimer"></i></div>
+      <div class="best" id="replayLives"></div>
+      <button class="btn" id="replayOk">Okay, got it</button>
     </div>
   </div>
 
@@ -177,6 +179,7 @@ button:focus-visible,a:focus-visible{outline:3px solid var(--mint);outline-offse
         <div class="stat"><span>Coins</span><b id="oCoins">0</b></div>
       </div>
       <p id="oWorld" style="font-weight:800"></p>
+      <p class="earned" id="oEarned" hidden></p>
       <div class="notice" id="oNotice"></div>
       <div id="oFixWrap"><p style="font-weight:800;margin-bottom:4px">Sentences you fixed today</p><ol class="fixes" id="oFixes"></ol></div>
       <button class="btn" id="againBtn">Run again</button>
@@ -355,7 +358,7 @@ function update(dt){
     S.px=1+Math.sin(t*0.8)*0.6;return;
   }
   if(mode==='caught'){S.caughtT+=dt;if(S.caughtT>1.1)gameOver();return;}
-  if(mode==='replay'){S.replayT-=dt;$('replayTimer').style.width=Math.max(0,S.replayT/2.8*100)+'%';if(S.replayT<=0)endReplay();return;}
+  if(mode==='replay')return;   // waits for the player to press Okay
   if(mode!=='run')return;
 
   const mv=S.v*dt;S.d+=mv;
@@ -405,16 +408,25 @@ function hitHurdle(){
   if(S.hearts<=0){mode='caught';S.caughtT=0;}
 }
 function showReplay(g,saved){
-  mode='replay';S.replayT=2.8;
+  // The run stops on the explanation until the player presses Okay, so there is time to read it.
+  mode='replay';
   const scr=$('replayScreen');scr.classList.toggle('saved',saved);
   $('replayTitle').textContent=S.wrong>=WRONG_LIMIT?'That was wrong answer '+WRONG_LIMIT+'!':saved?'Shield saved you!':(S.hearts<=0?'Caught!':'Trip!');
   const fix=$('replayFix');fix.textContent='';const parts=g.q.q.split('___');
   fix.appendChild(document.createTextNode(parts[0]));const m=document.createElement('mark');m.textContent=g.q.o[0];fix.appendChild(m);fix.appendChild(document.createTextNode(parts[1]||''));
   $('replayWhy').textContent=g.q.r;
   const p=$('replayPicked');p.textContent='You ran into: ';const sp=document.createElement('s');sp.textContent=g.opts[g.chosen];p.appendChild(sp);
-  scr.hidden=false;
+  const over=S.hearts<=0||S.wrong>=WRONG_LIMIT;
+  $('replayLives').textContent=over?'':'Wrong answers: '+S.wrong+' of '+WRONG_LIMIT;
+  $('replayOk').textContent=over?'See my score':'Okay, got it';
+  scr.hidden=false;$('replayOk').focus();
 }
-function endReplay(){$('replayScreen').hidden=true;hideCue();if(S.hearts<=0||S.wrong>=WRONG_LIMIT){gameOver();return;}mode='run';}
+function endReplay(){
+  if(mode!=='replay')return;
+  $('replayScreen').hidden=true;hideCue();
+  if(S.hearts<=0||S.wrong>=WRONG_LIMIT){gameOver();return;}
+  mode='run';last=performance.now();
+}
 
 let hudCache='';
 function paintHud(){
@@ -737,6 +749,25 @@ function drawGoblin(){
   ctx.fillStyle='#fff8e6';for(let i=-2;i<=2;i++){ctx.beginPath();ctx.moveTo(x+i*sz*0.12-sz*0.05,y+sz*0.15);ctx.lineTo(x+i*sz*0.12+sz*0.05,y+sz*0.15);ctx.lineTo(x+i*sz*0.12,y+sz*0.26);ctx.closePath();ctx.fill();}
 }
 
+const GAME_ID='runner';
+/* ---------- Lexi score ---------- */
+// A signed-in student's runs add to their Lexi score. The lobby leaves the
+// session id in sessionStorage before opening a game.
+function lexiSession(){try{const s=JSON.parse(sessionStorage.getItem('lexi-return'));return s&&s.session&&s.session.sessionId?s.session.sessionId:null;}catch(e){return null;}}
+function reportRun(correct,wrong,leaving){
+  const sid=lexiSession();if(!sid||!S||S.reported)return Promise.resolve(null);
+  S.reported=true;
+  const body=JSON.stringify({session_id:sid,game:GAME_ID,correct,wrong});
+  // keepalive lets the request finish even when the page is closing
+  return fetch('/game_result',{method:'POST',headers:{'Content-Type':'application/json'},body,keepalive:!!leaving}).then(r=>r.ok?r.json():null).catch(()=>null);
+}
+function showEarned(result){
+  const p=$('oEarned');p.hidden=false;
+  if(result)p.textContent='+'+result.points_earned+' points added to your Lexi score. You now have '+result.total_score+' points ('+result.rank+').';
+  else if(lexiSession())p.textContent='Could not reach Lexi to add your points.';
+  else p.textContent='Sign in to Lexi with your name to earn points from games.';
+}
+
 /* ---------- screens ---------- */
 function startRun(){
   if(!AC){try{AC=new (window.AudioContext||window.webkitAudioContext)();}catch(e){AC=null;}}
@@ -746,6 +777,7 @@ function startRun(){
 }
 function gameOver(){
   mode='over';$('replayScreen').hidden=true;hideCue();
+  $('oEarned').hidden=true;reportRun(S.correct,S.total-S.correct).then(showEarned);
   $('overTitle').textContent=S.wrong>=WRONG_LIMIT?WRONG_LIMIT+' wrong answers. Run over!':'The Goblin caught you!';
   $('oScore').textContent=S.score;$('oCorrect').textContent=S.correct+'/'+S.total;$('oStreak').textContent=S.best;$('oCoins').textContent=S.coins;
   const worst=Object.entries(S.misses).sort((a,b)=>b[1]-a[1])[0],nt=$('oNotice');nt.textContent='';
@@ -770,6 +802,7 @@ function steer(d){if(mode!=='run')return;S.lane=Math.max(0,Math.min(2,S.lane+d))
 function jump(){if(mode!=='run'||S.jy>0)return;S.jv=H*0.95;S.jy=0.01;sfx.jump();}
 window.addEventListener('keydown',e=>{
   const k=e.key;
+  if(mode==='replay'&&(k===' '||k==='Enter')){e.preventDefault();endReplay();return;}
   if(['ArrowLeft','ArrowRight','ArrowUp',' '].includes(k)&&mode!=='menu'&&mode!=='over')e.preventDefault();
   if(k==='ArrowLeft'||k==='a'||k==='A')steer(-1);
   else if(k==='ArrowRight'||k==='d'||k==='D')steer(1);
@@ -786,7 +819,10 @@ cv.addEventListener('pointerup',e=>{if(!sw)return;const dx=e.clientX-sw.x,dy=e.c
 $('startBtn').addEventListener('click',startRun);
 $('againBtn').addEventListener('click',startRun);
 $('resumeBtn').addEventListener('click',togglePause);
+$('replayOk').addEventListener('click',endReplay);
 $('pauseBtn').addEventListener('click',togglePause);
+// Leaving mid-run (back button, closing the tab) still counts the right answers so far
+window.addEventListener('pagehide',()=>{if(S&&mode!=='menu'&&S.correct>0&&!S.reported)reportRun(S.correct,S.total-S.correct,true);});
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&mode==='run')togglePause();});
 
 /* ---------- boot ---------- */
