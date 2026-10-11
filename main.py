@@ -4,8 +4,10 @@ Main application file
 """
 import os
 import re
+import time
 import webbrowser
-from threading import Timer
+from concurrent.futures import ThreadPoolExecutor
+from threading import Lock, Timer
 from flask import Flask, render_template, request, jsonify, send_from_directory
 from dotenv import load_dotenv
 import requests
@@ -55,20 +57,74 @@ def load_servers():
         else:
             print(f'SERVER_{n} skipped: azure servers need SERVER_{n}_ENDPOINT and SERVER_{n}_MODEL')
             continue
-        servers[str(n)] = {'type': kind, 'key': key, 'model': model, 'url': url}
+        servers[str(n)] = {'number': str(n), 'type': kind, 'key': key, 'model': model, 'url': url}
     if not servers:
         legacy = [_real(os.getenv(f'GROQ_API_KEY_{n}')) for n in range(1, MAX_SERVERS + 1)]
         for n, key in enumerate([k for k in legacy if k], start=1):
-            servers[str(n)] = {'type': 'groq', 'key': key, 'model': GROQ_MODEL, 'url': GROQ_URL}
+            servers[str(n)] = {'number': str(n), 'type': 'groq', 'key': key, 'model': GROQ_MODEL, 'url': GROQ_URL}
     return servers
 
 
 SERVERS = load_servers()
 
+# Servers the provider has refused (bad key, restricted account). They are
+# left out of the sign-in list. Rechecked every CHECK_EVERY seconds, so a
+# server that comes back is listed again without a restart.
+DEAD_SERVERS = {}
+CHECK_EVERY = 15 * 60
+_last_check = 0.0
+_check_lock = Lock()
+
+
+def is_refusal(status_code):
+    """A provider answer that means this key will not work (not just busy)"""
+    return status_code in (400, 401, 403, 404)
+
+
+def probe(server):
+    """('ok' | 'dead' | 'unknown', detail) for one tiny request to a server"""
+    try:
+        response = server_request(server, [{"role": "user", "content": "hi"}], max_tokens=16, timeout=20)
+    except requests.RequestException as error:
+        return 'unknown', f'unreachable ({type(error).__name__})'
+    if response.status_code == 200:
+        return 'ok', 'ok'
+    try:
+        detail = response.json().get('error', {}).get('code') or response.status_code
+    except (ValueError, AttributeError):
+        detail = response.status_code
+    # 429 (rate limit) and 5xx are temporary: the server still counts as working
+    return ('dead' if is_refusal(response.status_code) else 'unknown'), f'FAILING ({detail})'
+
+
+def check_servers():
+    """Probe every server at once and update DEAD_SERVERS"""
+    global _last_check
+    _last_check = time.time()
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = dict(zip(SERVERS, pool.map(probe, SERVERS.values())))
+    for number, (state, detail) in results.items():
+        if state == 'dead':
+            DEAD_SERVERS[number] = detail
+        elif state == 'ok':
+            DEAD_SERVERS.pop(number, None)
+    return results
+
+
+def working_servers():
+    """Server numbers to offer students, checking the servers when the last check is stale"""
+    if time.time() - _last_check > CHECK_EVERY and _check_lock.acquire(blocking=False):
+        try:
+            check_servers()
+        finally:
+            _check_lock.release()
+    return [n for n in SERVERS if n not in DEAD_SERVERS]
+
 
 def get_server(number):
-    """The server a student picked, or None if that number isn't configured"""
-    return SERVERS.get(str(number))
+    """The server a student picked, or None if it isn't configured or isn't working"""
+    number = str(number)
+    return SERVERS.get(number) if number not in DEAD_SERVERS else None
 
 
 # Configure Unsplash API
@@ -95,7 +151,7 @@ def trim_history(messages):
     return [system_message] + turns[-max_turns:]
 
 
-def server_request(server, messages, max_tokens=1024):
+def server_request(server, messages, max_tokens=1024, timeout=90):
     """POST a chat request to a server; returns the raw response"""
     if server['type'] == 'azure':
         # gpt-5 family: reasoning models with a fixed temperature, and their
@@ -107,13 +163,15 @@ def server_request(server, messages, max_tokens=1024):
         body = {'model': server['model'], 'messages': messages, 'temperature': 0.7, 'max_tokens': max_tokens}
         headers = {'Authorization': f"Bearer {server['key']}"}
     headers['Content-Type'] = 'application/json'
-    return requests.post(server['url'], headers=headers, json=body, timeout=90)
+    return requests.post(server['url'], headers=headers, json=body, timeout=timeout)
 
 
 def call_ai(messages, server):
     """Send the conversation to the student's server and return Lexi's reply"""
     try:
         response = server_request(server, messages)
+        if is_refusal(response.status_code) and response.status_code != 400:
+            DEAD_SERVERS[server['number']] = f'FAILING ({response.status_code})'
         response.raise_for_status()
         content = response.json()['choices'][0]['message']['content'] or ''
         # Strip reasoning-model <think> blocks before showing output to students
@@ -555,7 +613,7 @@ Start by greeting {student_name} and showing a clear EXAMPLE — make it somethi
 @app.route('/')
 def index():
     """Render the main page"""
-    return render_template('index.html', servers=list(SERVERS))
+    return render_template('index.html', servers=working_servers())
 
 
 # Arcade games: self-contained static pages. Served as-is rather than through
@@ -604,7 +662,7 @@ def start_session():
 
     server = get_server(server_number)
     if not server:
-        return jsonify({'error': f'Server {server_number} is not set up. Please pick another server or ask your teacher.'}), 503
+        return jsonify({'error': f'Server {server_number} is not working right now. Please pick another server.'}), 503
 
     # Create a session ID
     session_id = f"{student_name}_{student_class}_{len(conversations)}"
@@ -858,25 +916,14 @@ def health_servers():
     Without this the failure only shows up as students being unable to use
     that server at all.
     """
-    check = request.args.get('live') == '1'
+    results = check_servers() if request.args.get('live') == '1' else None
     report = {}
     for number, server in SERVERS.items():
         label = f"{server['type']} / {server['model']}"
-        if not check:
-            report[number] = f'configured ({label})'
-            continue
-        try:
-            response = server_request(server, [{"role": "user", "content": "hi"}], max_tokens=16)
-            if response.status_code == 200:
-                report[number] = f'ok ({label})'
-            else:
-                try:
-                    detail = response.json().get('error', {})
-                except ValueError:
-                    detail = {}
-                report[number] = f"FAILING ({detail.get('code') or response.status_code}) ({label})"
-        except requests.RequestException as error:
-            report[number] = f'unreachable ({type(error).__name__}) ({label})'
+        if results:
+            report[number] = f'{results[number][1]} ({label})'
+        else:
+            report[number] = f"{'hidden: ' + DEAD_SERVERS[number] if number in DEAD_SERVERS else 'listed'} ({label})"
 
     return jsonify({
         'servers': report or 'none configured: set SERVER_1_KEY (see README)',
