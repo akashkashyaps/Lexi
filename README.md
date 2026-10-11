@@ -148,6 +148,29 @@ Lexi is specifically designed for ESL (English as Second/Third Language) student
 
 **Lexi responds:** "Good try! Just one small fix: for *he/she/it*, we use **has**, not have. So it's: 'He **has** a bag.' Want to try another sentence with 'has'?"
 
+## Arcade Game Data
+
+The two arcade games (Word Catcher and Grammar Runner) need no AI and no API keys. Their word lists and questions are built once, offline, by a script:
+
+```bash
+pip install -r tools/requirements-build.txt
+python tools/build_game_data.py
+```
+
+The first run downloads the sources (about 30 MB) into `tools/.cache/`. The script then writes two files:
+
+- `static/games/data/word-catcher.json`:
+  - words sorted by part of speech, keeping only clear-cut words. A word is dropped if it is commonly used as more than one part of speech, like *run* or *light*. The checks use the Brown Corpus and WordNet.
+  - word-form pairs: past tense, plural, and he/she/it + s.
+- `static/games/data/grammar-runner.json`: fill-the-gap questions on the six topics, made by rule from short [Tatoeba](https://tatoeba.org) sentences.
+
+Both are limited to kid-level vocabulary: words children learn by about age 7½ (Kuperman age-of-acquisition ratings) or very common English words. If either file is missing, its game falls back to the small built-in lists.
+
+**Credits:**
+- Sentences: Tatoeba, [CC BY 2.0 FR](https://creativecommons.org/licenses/by/2.0/fr/).
+- Age-of-acquisition ratings: Kuperman, Stadthagen-Gonzalez & Brysbaert (2012), via [NoRaRe](https://norare.clld.org), CC BY 4.0.
+- Word classes: Brown Corpus (via NLTK) and WordNet (Princeton).
+
 ## Technical Details
 
 - **Backend**: Python with Flask

@@ -6,7 +6,7 @@ import os
 import re
 import webbrowser
 from threading import Timer
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_from_directory
 from dotenv import load_dotenv
 import requests
 import json
@@ -521,6 +521,30 @@ def index():
     return render_template('index.html')
 
 
+# Arcade games: self-contained static pages. Served as-is rather than through
+# render_template so Jinja never parses the game code, and they never touch a
+# session or a Groq key.
+GAMES_DIR = os.path.join(app.root_path, 'static', 'games')
+
+
+@app.route('/games/runner')
+def game_runner():
+    """Grammar Runner: steer into the lane with the right word"""
+    return send_from_directory(GAMES_DIR, 'grammar-runner.html')
+
+
+@app.route('/games/catcher')
+def game_catcher():
+    """Word Catcher: catch the words that match the rule"""
+    return send_from_directory(GAMES_DIR, 'word-catcher.html')
+
+
+@app.route('/session_status')
+def session_status():
+    """Whether a session id is still live (the lobby checks this when a student comes back from a game)"""
+    return jsonify({'alive': request.args.get('session_id') in conversations})
+
+
 @app.route('/get_activities', methods=['GET'])
 def get_activities():
     """Return all available activities"""
@@ -786,6 +810,48 @@ def end_session():
         'words_learned': len(conversation.get('used_vocab', set())),
         'activities_tried': sorted(conversation.get('activities_tried', set())),
         'highest_level_attempted': conversation.get('highest_level_attempted')
+    })
+
+
+@app.route('/health/keys')
+def health_keys():
+    """Which computer numbers have a key that Groq will actually accept.
+
+    A key can be present in .env and still be dead (suspended org, revoked
+    token). Without this the failure only shows up as a student being unable
+    to use that machine at all.
+    """
+    check = request.args.get('live') == '1'
+    report = {}
+
+    for number in range(1, 16):
+        key = get_key_for_computer(str(number))
+        if not key:
+            report[str(number)] = 'not configured'
+            continue
+        if not check:
+            report[str(number)] = 'configured'
+            continue
+        try:
+            response = requests.post(
+                url="https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                json={"model": GROQ_MODEL, "messages": [{"role": "user", "content": "hi"}],
+                      "max_tokens": 8},
+                timeout=15
+            )
+            if response.status_code == 200:
+                report[str(number)] = 'ok'
+            else:
+                detail = response.json().get('error', {})
+                report[str(number)] = f"FAILING ({detail.get('code') or response.status_code})"
+        except requests.RequestException as error:
+            report[str(number)] = f'unreachable ({type(error).__name__})'
+
+    return jsonify({
+        'model': GROQ_MODEL,
+        'computers': report,
+        'note': 'add ?live=1 to actually call Groq with each key'
     })
 
 

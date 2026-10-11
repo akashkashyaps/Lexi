@@ -12,7 +12,6 @@ const studentNameInput = document.getElementById('student-name');
 const studentClassInput = document.getElementById('student-class');
 const computerNumberInput = document.getElementById('computer-number');
 const startBtn = document.getElementById('start-btn');
-const studentInfo = document.getElementById('student-info');
 const chatMessages = document.getElementById('chat-messages');
 const chatContainer = document.querySelector('.chat-container');
 const messageInput = document.getElementById('message-input');
@@ -28,17 +27,50 @@ const howItWorksBtn = document.getElementById('how-it-works-btn');
 const howItWorksModal = document.getElementById('how-it-works-modal');
 const howItWorksClose = document.getElementById('how-it-works-close');
 
-// Activity containers
-const beginnerActivities = document.getElementById('beginner-activities');
-const intermediateActivities = document.getElementById('intermediate-activities');
-const advancedActivities = document.getElementById('advanced-activities');
-const storyActivities = document.getElementById('story-activities');
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
-    focusInput(studentNameInput);
+    restoreAfterGame();
 });
+
+// The lobby saves this before opening a game page, so the player is still
+// signed in when they come back.
+window.getSessionInfo = () => (sessionId ? { sessionId, studentName, studentClass } : null);
+
+async function restoreAfterGame() {
+    const snap = window.Lobby && window.Lobby.takeReturn();
+    if (!snap) return;
+    const lobby = snap.lobby;
+    const saved = snap.session;
+    if (!lobby.guest && saved && saved.sessionId) {
+        let alive = false;
+        try {
+            const r = await fetch('/session_status?session_id=' + encodeURIComponent(saved.sessionId));
+            alive = (await r.json()).alive;
+        } catch (e) { /* treat as gone */ }
+        if (!alive) {
+            // The server restarted while they were playing: sign back in with the same details.
+            try {
+                const r = await fetch('/start_session', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: lobby.name, class: lobby.cls, computer_number: lobby.computer })
+                });
+                const data = await r.json();
+                if (!r.ok) return;
+                saved.sessionId = data.session_id;
+                Object.assign(lobby, { score: 0, rank: null, streak: 0 });
+            } catch (e) { return; }
+        }
+        sessionId = saved.sessionId;
+        studentName = saved.studentName;
+        studentClass = saved.studentClass;
+        await loadActivities();
+    }
+    window.Lobby.restore(lobby);
+    if (!lobby.guest) updateScoreDisplay(lobby.score, lobby.rank, 0, lobby.streak);
+}
 
 // Event Listeners
 function setupEventListeners() {
@@ -119,14 +151,16 @@ async function startSession() {
     const computerNumber = computerNumberInput.value.trim();
 
     if (!name || !stdClass) {
-        alert('Please enter both your name and class!');
+        showFormError('Please enter both your name and class!');
         return;
     }
 
     if (!computerNumber) {
-        alert('Please select your computer number!');
+        showFormError('Please select your computer number!');
         return;
     }
+
+    if (window.Lobby) window.Lobby.clearError();
 
     showLoading(true);
 
@@ -150,80 +184,38 @@ async function startSession() {
             studentName = data.name;
             studentClass = data.class;
 
-            // Update student info display
-            studentInfo.textContent = `${studentName} • Class ${studentClass}`;
+            // Show the student in the lobby's player card
+            if (window.Lobby) window.Lobby.setPlayer(studentName, studentClass, computerNumber);
 
             // Load activities
             await loadActivities();
 
             switchScreen('activity');
         } else {
-            alert(data.error || 'Failed to start session.');
+            showFormError(data.error || 'Failed to start session.');
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to connect. Please make sure the server is running.');
+        showFormError('Failed to connect. Please make sure the server is running.');
     } finally {
         showLoading(false);
     }
 }
 
-// Load Activities
+// Load Activities: the lobby (lobby.js) draws the cards
 async function loadActivities() {
     try {
         const response = await fetch('/get_activities');
         const data = await response.json();
-
-        // Clear existing activities
-        beginnerActivities.innerHTML = '';
-        intermediateActivities.innerHTML = '';
-        advancedActivities.innerHTML = '';
-        storyActivities.innerHTML = '';
-
-        // Render beginner activities
-        data.activities.beginner.forEach(activity => {
-            beginnerActivities.appendChild(createActivityCard(activity));
-        });
-
-        // Render intermediate activities
-        data.activities.intermediate.forEach(activity => {
-            intermediateActivities.appendChild(createActivityCard(activity));
-        });
-
-        // Render advanced activities
-        data.activities.advanced.forEach(activity => {
-            advancedActivities.appendChild(createActivityCard(activity));
-        });
-
-        // Render story mode activities
-        if (data.activities.story_mode) {
-            data.activities.story_mode.forEach(activity => {
-                storyActivities.appendChild(createActivityCard(activity));
-            });
-        }
-
+        if (window.Lobby) window.Lobby.setActivities(data.activities);
     } catch (error) {
         console.error('Error loading activities:', error);
     }
 }
 
-// Create Activity Card
-function createActivityCard(activity) {
-    const card = document.createElement('div');
-    card.className = 'activity-card';
-    card.dataset.activityId = activity.id;
-
-    card.innerHTML = `
-        <div class="activity-card-header">
-            <h4 class="activity-card-title">${activity.title}</h4>
-            <span class="activity-badge ${activity.level}">${activity.level}</span>
-        </div>
-        <p class="activity-card-description">${activity.description}</p>
-    `;
-
-    card.addEventListener('click', () => startActivity(activity.id, activity.title, activity.description));
-
-    return card;
+function showFormError(message) {
+    if (window.Lobby) window.Lobby.formError(message);
+    else alert(message);
 }
 
 // Start Activity
@@ -475,17 +467,22 @@ function removeTypingIndicator(typingId) {
 
 // Switch Screen
 function switchScreen(screen) {
-    welcomeScreen.classList.remove('active');
-    activityScreen.classList.remove('active');
-    chatScreen.classList.remove('active');
+    const apply = () => {
+        welcomeScreen.classList.remove('active');
+        activityScreen.classList.remove('active');
+        chatScreen.classList.remove('active');
 
-    if (screen === 'welcome') {
-        welcomeScreen.classList.add('active');
-    } else if (screen === 'activity') {
-        activityScreen.classList.add('active');
-    } else if (screen === 'chat') {
-        chatScreen.classList.add('active');
-    }
+        if (screen === 'welcome') {
+            welcomeScreen.classList.add('active');
+        } else if (screen === 'activity') {
+            activityScreen.classList.add('active');
+        } else if (screen === 'chat') {
+            chatScreen.classList.add('active');
+        }
+    };
+    // The lobby plays its screen wipe and swaps screens under it
+    if (window.Lobby) window.Lobby.transition(apply, screen);
+    else apply();
 }
 
 // Scroll to Bottom
@@ -495,6 +492,7 @@ function scrollToBottom() {
 
 // Show/Hide Loading
 function showLoading(show) {
+    if (window.Lobby) window.Lobby.loading(show);
     if (show) {
         loading.classList.remove('hidden');
     } else {
@@ -512,6 +510,7 @@ let lastKnownRank = null;
 
 function updateScoreDisplay(totalScore, rank, pointsEarned, streak) {
     if (totalScore === undefined || !scoreValueEl) return;
+    if (window.Lobby) window.Lobby.setScore(totalScore, rank, streak);
 
     scoreValueEl.textContent = `${totalScore} pts`;
 

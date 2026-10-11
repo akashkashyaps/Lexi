@@ -3,117 +3,117 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%F0%9F%A6%8A%3C/text%3E%3C/svg%3E">
     <title>Lexi 🦊 - English Learning Assistant</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Nunito:ital,wght@0,400;0,600;0,700;0,800;1,600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=3">
+    <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Chakra+Petch:wght@500;600;700&family=Lilita+One&family=Nunito:ital,wght@0,400;0,600;0,700;0,800;0,900;1,600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=5">
+    <link rel="stylesheet" href="{{ url_for('static', filename='lobby.css') }}?v=2">
 </head>
 <body>
-    <!-- Welcome Screen -->
-    <div id="welcome-screen" class="screen active">
-        <canvas id="particles-welcome" class="particles-canvas"></canvas>
-        <div class="welcome-container">
-            <div class="mascot">🦊</div>
-            <h1 class="app-title">Lexi</h1>
-            <p class="tagline">Your friendly English learning companion</p>
+    <!-- Lobby stage: drawn behind the welcome screen and the lobby, hidden during chat -->
+    <canvas id="lb-bg" class="lb-bg" aria-hidden="true"></canvas>
+    <div id="lb-grain" class="lb-grain" aria-hidden="true"></div>
+    <div class="lb-vignette" aria-hidden="true"></div>
+    <div id="lb-wipe" class="lb-wipe" aria-hidden="true"><i></i><i></i><i></i></div>
 
-            <div class="form-container">
-                <div class="input-group">
-                    <label for="student-name">What's your name?</label>
-                    <input type="text" id="student-name" placeholder="Enter your name" autocomplete="off">
+    <!-- Welcome Screen: title, then player setup -->
+    <div id="welcome-screen" class="screen active lb-screen">
+        <section id="lb-title" class="lb-title" aria-label="Title screen" tabindex="0">
+            <div class="lb-title-fox" data-lexi></div>
+            <p class="lb-tagline">An English adventure</p>
+            <h1 class="lb-logo">LEXI</h1>
+            <div class="lb-press"><span class="txt">PRESS <kbd>ENTER</kbd> TO START</span></div>
+        </section>
+
+        <section id="lb-setup" class="lb-setup" aria-label="Create your player" hidden>
+            <div class="lb-setup-card lb-glass lb-brackets lb-chamfer">
+                <div class="lb-setup-art"><div class="lb-plinth" data-plinth></div></div>
+                <div class="lb-setup-form">
+                    <div class="lb-eyebrow">New player</div>
+                    <h2 class="lb-h2">Create your player</h2>
+                    <div class="lb-field">
+                        <label for="student-name">Your name</label>
+                        <input type="text" id="student-name" placeholder="Enter your name" maxlength="30" autocomplete="off">
+                    </div>
+                    <div class="lb-row2">
+                        <div class="lb-field">
+                            <label for="student-class">Class</label>
+                            <input type="text" id="student-class" placeholder="e.g. 5" maxlength="5" autocomplete="off">
+                        </div>
+                        <div class="lb-field">
+                            <label for="computer-number">Computer</label>
+                            <select id="computer-number">
+                                <option value="">Pick one</option>
+                                <option value="1">Computer 1</option>
+                                <option value="2">Computer 2</option>
+                                <option value="3">Computer 3</option>
+                                <option value="4">Computer 4</option>
+                                <option value="5">Computer 5</option>
+                                <option value="6">Computer 6</option>
+                                <option value="7">Computer 7</option>
+                                <option value="8">Computer 8</option>
+                                <option value="9">Computer 9</option>
+                                <option value="10">Computer 10</option>
+                                <option value="11">Computer 11</option>
+                                <option value="12">Computer 12</option>
+                                <option value="13">Computer 13</option>
+                                <option value="14">Computer 14</option>
+                                <option value="15">Computer 15</option>
+                            </select>
+                        </div>
+                    </div>
+                    <span class="lb-help">Your computer number is on the sticker on your computer.</span>
+                    <p id="lb-form-error" class="lb-error" role="alert" hidden></p>
+                    <button id="start-btn" class="lb-cta lb-chamfer" type="button">Enter the lobby <kbd>ENTER</kbd></button>
+                    <button id="lb-skip-game" class="lb-ghost" type="button">No details? <b>Play a game &rarr;</b></button>
                 </div>
-
-                <div class="input-group">
-                    <label for="student-class">Which class are you in?</label>
-                    <input type="text" id="student-class" placeholder="e.g., 5, 6, 7, 8" autocomplete="off">
-                </div>
-
-                <div class="input-group">
-                    <label for="computer-number">What is your computer number?</label>
-                    <select id="computer-number">
-                        <option value="">Select computer number...</option>
-                        <option value="1">Computer 1</option>
-                        <option value="2">Computer 2</option>
-                        <option value="3">Computer 3</option>
-                        <option value="4">Computer 4</option>
-                        <option value="5">Computer 5</option>
-                        <option value="6">Computer 6</option>
-                        <option value="7">Computer 7</option>
-                        <option value="8">Computer 8</option>
-                        <option value="9">Computer 9</option>
-                        <option value="10">Computer 10</option>
-                        <option value="11">Computer 11</option>
-                        <option value="12">Computer 12</option>
-                        <option value="13">Computer 13</option>
-                        <option value="14">Computer 14</option>
-                        <option value="15">Computer 15</option>
-                    </select>
-                    <span class="input-hint-small">Check the number sticker on your computer</span>
-                </div>
-
-                <button id="start-btn" class="primary-btn">
-                    <span>Continue</span>
-                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                        <path d="M7.5 15L12.5 10L7.5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </button>
             </div>
-        </div>
+        </section>
     </div>
 
-    <!-- Activity Selection Screen -->
-    <div id="activity-screen" class="screen">
-        <canvas id="particles-activity" class="particles-canvas"></canvas>
-        <div class="activity-container">
-            <div class="activity-header">
-                <div>
-                    <h2 id="student-info">Student Name • Class X</h2>
-                    <h1 class="activity-title">Pick an Activity</h1>
-                    <p class="activity-subtitle">Choose a writing exercise and improve your English!</p>
-                </div>
-                <button id="new-session-btn" class="secondary-btn">
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                        <path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                    </svg>
-                    <span>New Session</span>
-                </button>
+    <!-- Activity Selection Screen: the lobby -->
+    <div id="activity-screen" class="screen lb-screen">
+        <header class="lb-topbar">
+            <div class="lb-player lb-glass lb-chamfer">
+                <div class="lb-avatar" data-lexi></div>
+                <div class="lb-who"><strong id="lb-name">Guest</strong><span id="lb-meta">Playing without a name</span></div>
             </div>
-
-            <div class="activities-grid">
-                <!-- Beginner Activities -->
-                <div class="level-section">
-                    <h3 class="level-title">Beginner</h3>
-                    <div id="beginner-activities" class="activity-cards">
-                        <!-- Cards will be inserted here -->
-                    </div>
-                </div>
-
-                <!-- Intermediate Activities -->
-                <div class="level-section">
-                    <h3 class="level-title">Intermediate</h3>
-                    <div id="intermediate-activities" class="activity-cards">
-                        <!-- Cards will be inserted here -->
-                    </div>
-                </div>
-
-                <!-- Advanced Activities -->
-                <div class="level-section">
-                    <h3 class="level-title">Advanced</h3>
-                    <div id="advanced-activities" class="activity-cards">
-                        <!-- Cards will be inserted here -->
-                    </div>
-                </div>
-
-                <!-- Story Mode -->
-                <div class="level-section">
-                    <h3 class="level-title">Story Mode</h3>
-                    <div id="story-activities" class="activity-cards">
-                        <!-- Story mode card will be inserted here -->
-                    </div>
-                </div>
+            <div class="lb-xp" aria-label="Rank progress">
+                <div class="lb-hud"><span id="lb-rank-name">Bronze</span><em id="lb-rank-next">0 / 40 pts to Silver</em></div>
+                <div class="lb-bar lb-chamfer"><i id="lb-xp"></i></div>
             </div>
+            <nav class="lb-tabs" role="tablist" aria-label="Modes">
+                <kbd aria-hidden="true">Q</kbd>
+                <button class="lb-tab" role="tab" data-tab="learn" aria-selected="true">Learn</button>
+                <button class="lb-tab" role="tab" data-tab="story" aria-selected="false">Story</button>
+                <button class="lb-tab" role="tab" data-tab="game" aria-selected="false">Game</button>
+                <button class="lb-tab" role="tab" data-tab="stats" aria-selected="false">Stats</button>
+                <kbd aria-hidden="true">E</kbd>
+            </nav>
+            <div class="lb-wallet">
+                <div class="lb-coin rank lb-glass lb-chamfer" title="Rank"><svg viewBox="0 0 20 20" aria-hidden="true"><path fill="#ffd36b" d="M10 1l2.6 5.6 6.1.7-4.5 4.2 1.2 6L10 14.6 4.6 17.5l1.2-6L1.3 7.3l6.1-.7z"/></svg><span id="lb-w-rank">Bronze</span></div>
+                <div class="lb-coin lb-glass lb-chamfer" title="Points"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8" fill="#ff7a2f"/><circle cx="10" cy="10" r="4.5" fill="#ffb56b"/></svg><span id="lb-w-points">0</span></div>
+                <div class="lb-coin lb-glass lb-chamfer" title="Accuracy streak"><svg viewBox="0 0 20 20" aria-hidden="true"><path fill="#ff7a2f" d="M10 1c1 4 5 5.5 5 10.5A5 5 0 0 1 5 11.5C5 8.5 7 7.5 7 5c2 1 2.5 3 2.5 3S10.5 4.5 10 1z"/></svg><span id="lb-w-streak">0</span></div>
+            </div>
+        </header>
+
+        <div class="lb-stage">
+            <div class="lb-hero" aria-hidden="true">
+                <div class="lb-plinth" data-plinth></div>
+                <div class="lb-hero-tag"><span class="lb-hud">Your guide</span><strong>Lexi</strong><small id="lb-hero-line">Pick a game to play!</small></div>
+            </div>
+            <main id="lb-content" class="lb-content"></main>
+            <aside id="lb-detail" class="lb-detail lb-glass lb-brackets lb-chamfer" aria-live="polite"></aside>
         </div>
+
+        <footer class="lb-footbar">
+            <button id="new-session-btn" class="lb-end" type="button"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/><path d="M4.5 3.8a5.5 5.5 0 1 0 7 0" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg><span>Exit</span></button>
+            <span class="k"><kbd>Q</kbd><kbd>E</kbd> Switch mode</span>
+            <span class="k"><kbd>&larr;</kbd><kbd>&rarr;</kbd> Choose</span>
+            <span><kbd>ENTER</kbd> Start</span>
+        </footer>
     </div>
 
     <!-- Chat Screen -->
@@ -168,6 +168,12 @@
     <!-- Loading Indicator -->
     <div id="loading" class="loading hidden">
         <div class="loading-spinner"></div>
+        <div class="lb-load-fox"><div class="lb-plinth" data-plinth></div></div>
+        <div class="lb-load-wrap">
+            <p class="lb-load-title">Loading</p>
+            <div class="lb-tip lb-glass lb-chamfer"><b>TIP</b><span id="lb-tip"></span></div>
+            <div class="lb-bar lb-chamfer indeterminate"><i></i></div>
+        </div>
     </div>
 
     <!-- How Points Work Modal -->
@@ -225,7 +231,7 @@
         </div>
     </div>
 
-    <script src="{{ url_for('static', filename='particles.js') }}"></script>
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <script src="{{ url_for('static', filename='script.js') }}?v=3"></script>
+    <script src="{{ url_for('static', filename='lobby.js') }}?v=3"></script>
 </body>
 </html>

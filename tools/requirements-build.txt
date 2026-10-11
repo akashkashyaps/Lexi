@@ -1,0 +1,4 @@
+# Only needed to rebuild the arcade games' data (tools/build_game_data.py), not to run the app.
+nltk==3.10.3
+lemminflect==0.2.3
+wordfreq==3.1.1
