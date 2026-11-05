@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Word Storm 3D</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Lilita+One&display=swap">
+<style>
+/* Layout: full-bleed 3D canvas; HUD pinned to the edges; chunky sticker panels (cream on ink) for menus, matching Lexi's 2D games */
+:root{
+  --ink:#1d1640; --ink2:#2e2563; --paper:#fff4dc; --marigold:#ffb627; --chili:#ef4f3f; --mint:#2fcf95; --sky:#38a6ff;
+  --glass:rgba(22,16,52,.72); --soft:#cdc4f2; --edge:#ffd84a;
+  --display:"Lilita One","Arial Rounded MT Bold",system-ui,sans-serif;
+  --body:"Baloo 2",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:dark;
+}
+[hidden]{display:none!important}
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--ink);color:var(--paper);font-family:var(--body);overflow:hidden;font-size:16px;-webkit-user-select:none;user-select:none}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+button{font:inherit;cursor:pointer}
+button:focus-visible{outline:3px solid var(--marigold);outline-offset:3px}
+
+/* HUD */
+.hud{position:fixed;inset:0;pointer-events:none}
+.top{position:absolute;left:max(16px,env(safe-area-inset-left,0px));right:max(16px,env(safe-area-inset-right,0px));top:calc(env(safe-area-inset-top,0px) + 12px);display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{background:var(--glass);border:2px solid rgba(255,244,220,.16);border-radius:12px;padding:3px 12px 5px;display:flex;flex-direction:column;min-width:74px;backdrop-filter:blur(6px)}
+.chip .l{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--soft);font-weight:800}
+.chip b{font-family:var(--display);font-weight:400;font-size:24px;line-height:1.1;font-variant-numeric:tabular-nums}
+.right{display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+.danger{width:min(240px,40vw);background:var(--glass);border:2px solid rgba(255,244,220,.16);border-radius:12px;padding:4px 10px 8px}
+.danger .l{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--soft);font-weight:800;display:flex;justify-content:space-between}
+.bar{height:10px;border-radius:6px;background:rgba(255,255,255,.12);overflow:hidden;margin-top:3px}
+.bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#7dff6a,#2fcf95);border-radius:6px;transition:width .3s}
+.danger.hot .bar i{background:linear-gradient(90deg,#ff9a2f,#ef4f3f);animation:pulse .5s infinite alternate}
+@keyframes pulse{to{filter:brightness(1.5)}}
+.world{font-family:var(--display);font-size:15px;color:var(--edge);text-shadow:0 2px 0 var(--ink)}
+.pbtn{pointer-events:auto;background:var(--glass);color:var(--paper);border:2px solid rgba(255,244,220,.2);border-radius:10px;padding:2px 12px 4px;font-weight:800}
+.combo{font-family:var(--display);font-size:22px;margin-top:6px;text-shadow:0 3px 0 var(--ink);min-height:1em}
+.combo[data-lvl="2"]{color:#ffb02e}.combo[data-lvl="3"]{color:#7ff7ff;animation:pulse .4s infinite alternate}
+.powers{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.pw{background:var(--c);color:var(--ink);font-weight:800;border-radius:999px;padding:1px 12px 3px;border:2px solid var(--ink);font-size:14px}
+
+.cue{position:absolute;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0px) + 92px);width:min(calc(100% - 32px),660px);background:var(--paper);color:var(--ink);border:3px solid var(--ink);border-radius:18px;box-shadow:0 6px 0 var(--ink),0 18px 40px rgba(0,0,0,.35);padding:8px 18px 12px;text-align:center;animation:drop .35s cubic-bezier(.2,1.4,.4,1)}
+@keyframes drop{from{transform:translate(-50%,-30px);opacity:0}}
+.cue .tag{font-size:12px;letter-spacing:.14em;text-transform:uppercase;font-weight:800;color:#7a6fa8}
+.cue .txt{font-weight:800;font-size:clamp(20px,3.2vw,30px);line-height:1.25;text-wrap:balance}
+.blank{display:inline-block;min-width:3.2em;border-bottom:4px solid var(--ink);margin:0 .2em;color:#7a6fa8}
+.cue.ok .blank{color:#14995f;border-color:#14995f}.cue.bad .blank{color:var(--chili);border-color:var(--chili)}
+.opts{display:flex;justify-content:center;gap:10px;margin-top:6px;flex-wrap:wrap}
+.opt{font-family:var(--display);font-size:clamp(17px,2.4vw,22px);padding:1px 14px 3px;border-radius:12px;background:var(--c);color:var(--ink);border:3px solid var(--ink);box-shadow:0 3px 0 var(--ink)}
+.cue.ok .opt:not(.right),.cue.bad .opt:not(.right){opacity:.35}
+.boss{position:absolute;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0px) + 14px);width:min(34vw,380px);text-align:center;font-family:var(--display);color:#9dff7a;text-shadow:0 2px 0 var(--ink)}
+.boss .bar{height:14px;border:2px solid var(--ink);background:rgba(0,0,0,.4)}
+.boss .bar i{background:linear-gradient(90deg,#9dff7a,#2a9a20);width:100%}
+.pops{position:absolute;left:50%;top:46%;transform:translateX(-50%);pointer-events:none}
+.pop{position:absolute;left:0;transform:translateX(-50%);white-space:nowrap;font-family:var(--display);font-size:34px;text-shadow:0 3px 0 var(--ink),0 0 18px rgba(0,0,0,.4);animation:rise 1.1s ease-out forwards}
+@keyframes rise{from{transform:translate(-50%,10px) scale(.6);opacity:0}20%{transform:translate(-50%,0) scale(1.15);opacity:1}to{transform:translate(-50%,-80px) scale(1);opacity:0}}
+.banner{position:fixed;left:0;right:0;top:34%;text-align:center;pointer-events:none}
+.banner .a{font-family:var(--display);font-size:clamp(44px,8vw,96px);color:var(--edge);text-shadow:0 6px 0 var(--ink),0 0 40px rgba(0,0,0,.4);line-height:1}
+.banner .b{font-weight:800;font-size:clamp(18px,2.6vw,26px);text-shadow:0 2px 0 var(--ink)}
+.banner.go{animation:bn 2.6s ease forwards}
+@keyframes bn{0%{transform:scale(.4);opacity:0}12%{transform:scale(1.08);opacity:1}20%{transform:scale(1)}80%{opacity:1}100%{opacity:0;transform:translateY(-30px)}}
+.flash{position:fixed;inset:0;pointer-events:none;opacity:0}
+.flash.go{animation:fl .6s ease-out}
+@keyframes fl{from{opacity:1}to{opacity:0}}
+.touch{position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 16px);left:max(16px,env(safe-area-inset-left,0px));right:max(16px,env(safe-area-inset-right,0px));display:none;justify-content:space-between;pointer-events:none}
+.touch button{pointer-events:auto;width:72px;height:72px;border-radius:50%;background:var(--glass);color:var(--paper);border:3px solid rgba(255,244,220,.3);font-family:var(--display);font-size:28px}
+@media (max-width:520px){.chip{min-width:58px;padding:2px 8px 4px}.chip b{font-size:19px}.chip .l{font-size:10px}.danger{width:44vw}.danger .world{display:none}.cue{top:calc(env(safe-area-inset-top,0px) + 128px)}}
+@media (pointer:coarse){.touch{display:flex}}
+@media (max-width:760px){.boss{top:calc(env(safe-area-inset-top,0px) + 74px);width:calc(100% - 32px)}.boss:not([hidden])~.cue{top:calc(env(safe-area-inset-top,0px) + 122px)}}
+
+/* Panels */
+.scrim{position:fixed;inset:0;display:grid;place-items:center;padding:16px max(16px,env(safe-area-inset-right,0px)) 16px max(16px,env(safe-area-inset-left,0px));background:radial-gradient(ellipse at center,rgba(20,14,50,.25),rgba(20,14,50,.7));overflow:auto}
+.panel{width:min(100%,560px);background:var(--paper);color:var(--ink);border:4px solid var(--ink);border-radius:24px;box-shadow:0 8px 0 var(--ink),0 30px 60px rgba(0,0,0,.4);padding:22px 26px 24px}
+.panel h1{font-family:var(--display);font-weight:400;font-size:clamp(38px,6vw,54px);line-height:1;margin:0 0 4px;color:var(--ink);text-wrap:balance}
+.panel h1 span{color:var(--sky)}
+.panel h2{font-family:var(--display);font-weight:400;font-size:clamp(28px,4.5vw,38px);margin:0 0 8px;line-height:1.05;text-wrap:balance}
+.panel p{margin:6px 0;line-height:1.45}
+.eyebrow{font-size:12px;letter-spacing:.16em;text-transform:uppercase;font-weight:800;color:#7a6fa8}
+.keys{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin:12px 0;align-items:center}
+kbd{font-family:var(--display);background:var(--ink);color:var(--paper);border-radius:8px;padding:1px 9px 3px;font-size:15px;white-space:nowrap}
+.legend{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 2px}
+.legend span{font-weight:800;font-size:13px;border-radius:999px;padding:1px 10px 2px;border:2px solid var(--ink);background:var(--c)}
+.go-btn{display:block;width:100%;margin-top:14px;font-family:var(--display);font-size:26px;padding:10px 18px 13px;background:var(--marigold);color:var(--ink);border:4px solid var(--ink);border-radius:16px;box-shadow:0 6px 0 var(--ink);transition:transform .08s}
+.go-btn:active{transform:translateY(4px);box-shadow:0 2px 0 var(--ink)}
+.go-btn:disabled{opacity:.6;cursor:wait}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.small{text-decoration:none;display:inline-block;background:transparent;border:2px solid var(--ink);color:var(--ink);border-radius:10px;padding:2px 12px 4px;font-weight:800;font-size:14px}
+.load{height:10px;border-radius:6px;background:#e5d9bd;border:2px solid var(--ink);overflow:hidden;margin-top:12px}
+.load i{display:block;height:100%;width:0;background:var(--mint);transition:width .2s}
+.best{font-weight:800;color:#7a6fa8;margin-top:8px;min-height:1em}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0}
+.stats div{background:#f3e5c2;border:2px solid var(--ink);border-radius:12px;padding:4px 8px 6px;text-align:center}
+.stats b{display:block;font-family:var(--display);font-weight:400;font-size:24px;font-variant-numeric:tabular-nums}
+.stats span{font-size:11px;letter-spacing:.1em;text-transform:uppercase;font-weight:800;color:#7a6fa8}
+@media (max-width:460px){.stats{grid-template-columns:repeat(2,1fr)}}
+mark{background:#b8f5d8;color:var(--ink);border-radius:6px;padding:0 4px;font-weight:800}
+.fix{margin:6px 0 0;padding-left:20px}.fix li{margin:2px 0}
+.notice{background:#ffe9a8;border:2px solid var(--ink);border-radius:12px;padding:8px 12px}
+.ex-s{font-weight:800;font-size:clamp(20px,3vw,26px);line-height:1.3;margin:10px 0}
+.you{color:var(--chili);font-weight:800;text-decoration:line-through}
+.credit{font-size:12px;color:#7a6fa8;margin-top:12px;line-height:1.4}
+.credit a{color:inherit}
+.earned{font-weight:800;color:#14995f}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.01s!important;transition:none!important}}
+</style>
+<style>
+.rule{position:absolute;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0px) + 12px);width:min(calc(100% - 32px),520px);background:var(--paper);color:var(--ink);border:3px solid var(--ink);border-radius:18px;box-shadow:0 6px 0 var(--ink);padding:6px 16px 10px;text-align:center}
+.rule .tag{font-size:12px;letter-spacing:.14em;text-transform:uppercase;font-weight:800;color:#7a6fa8}
+.rule .name{font-family:var(--display);font-size:clamp(24px,3.6vw,34px);line-height:1.05}
+.rule .name em{font-style:normal;color:var(--sky)}
+.rule .hint{font-weight:700;color:#5d5385}
+.pips{display:flex;gap:6px;justify-content:center;margin-top:4px}
+.pips i{width:18px;height:18px;border-radius:50%;background:#e5d9bd;border:2px solid var(--ink)}
+.pips i.on{background:var(--mint)}
+.hearts{display:flex;gap:6px;padding-top:4px}
+.hearts i{width:22px;height:20px;background:var(--chili);clip-path:path('M11 19 C11 19 1 12 1 6.5 C1 3 3.5 1 6 1 C8 1 10 2.3 11 4 C12 2.3 14 1 16 1 C18.5 1 21 3 21 6.5 C21 12 11 19 11 19Z')}
+.hearts i.gone{background:rgba(255,255,255,.2)}
+.topcol{display:flex;flex-direction:column;gap:6px}
+.pop{position:absolute;transform:translate(-50%,-50%)}
+.toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 22px);transform:translateX(-50%);width:min(calc(100% - 32px),560px);background:var(--paper);color:var(--ink);border:3px solid var(--chili);border-radius:16px;box-shadow:0 6px 0 var(--ink);padding:10px 16px;font-weight:700;font-size:clamp(17px,2.2vw,21px);text-align:center;pointer-events:none}
+.toast b{color:var(--chili)}
+.toast.go{animation:drop2 .3s cubic-bezier(.2,1.4,.4,1)}
+@keyframes drop2{from{transform:translate(-50%,30px);opacity:0}}
+.topics{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 4px}
+.topic{background:#f3e5c2;border:2px solid var(--ink);color:var(--ink);border-radius:999px;padding:1px 12px 3px;font-weight:800;font-size:14px}
+.topic.on{background:var(--ink);color:var(--paper)}
+@media (max-width:700px){.top{top:calc(env(safe-area-inset-top,0px) + 132px)}}
+</style>
+</head>
+<body>
+<canvas id="game" aria-label="Word Storm game"></canvas>
+<div class="hud" id="hud" hidden>
+  <div class="top">
+    <div class="topcol">
+      <div class="chips"><div class="chip"><span class="l">Score</span><b id="score">0</b></div><div class="chip"><span class="l">Caught</span><b id="right">0</b></div></div>
+      <div class="hearts" id="hearts" aria-label="Hearts"></div>
+      <div class="combo" id="combo"></div>
+    </div>
+    <div class="right"><button class="pbtn" id="pauseBtn" type="button">Pause</button><div class="powers" id="powers"></div></div>
+  </div>
+  <div class="rule"><div class="tag" id="ruleNo"></div><div class="name">Catch <em id="ruleName"></em></div><div class="hint" id="ruleHint"></div><div class="pips" id="pips"></div></div>
+  <div class="pops" id="pops" style="position:fixed;inset:0;transform:none;left:0;top:0"></div>
+</div>
+<div class="toast" id="toast" hidden></div>
+<div class="banner" id="banner" hidden><div class="a" id="bannerA"></div><div class="b" id="bannerB"></div></div>
+<div class="flash" id="flash"></div>
+
+<div class="scrim" id="menu">
+  <div class="panel">
+    <div class="eyebrow">Lexi games · 3D</div>
+    <h1>Word <span>Storm</span></h1>
+    <p>Words are falling from the sky onto Lexi's island. The rule at the top says which words to catch. <b>Catch the words that fit the rule. Let the wrong ones fall.</b> Catch 6 right words to beat a rule.</p>
+    <div class="keys"><kbd>&#8592; &#8594;</kbd><span>Run left and right (or move your mouse)</span><kbd>P</kbd><span>Pause</span></div>
+    <p>Catching a wrong word costs a heart. Every third rule brings a meteor shower. Gold words are worth triple. Catch power-ups:</p>
+    <div class="legend"><span style="--c:#ff7b2c">Word Bomb</span><span style="--c:#ff5fb4">Slow time</span><span style="--c:#ff7b88">Extra heart</span><span style="--c:#ffd23a">Big net</span></div>
+    <p class="eyebrow" style="margin-top:12px">Practise</p>
+    <div class="topics" id="topics"></div>
+    <div class="load" id="loading"><i id="loadFill"></i></div>
+    <button class="go-btn" id="start" type="button" disabled>Loading island…</button>
+    <div class="best" id="best"></div>
+    <div class="row"><button class="small" id="qBtn" type="button">Graphics: Auto</button><button class="small" id="mute" type="button">Sound on</button><a class="small" id="allGames" href="index.html">All games</a></div>
+    <div class="credit">3D models: Quaternius and Kay Lousberg (CC0). Fox model by PixelMannen (CC0), rigged and animated by tomkranis (CC BY 4.0). Sky: Poly Haven (CC0). Word lists: Brown Corpus, WordNet (Princeton), Kuperman et al. (2012) via NoRaRe, CC BY 4.0.</div>
+  </div>
+</div>
+<div class="scrim" id="pauseScr" hidden><div class="panel"><h2>Paused</h2><p>The words will wait for you.</p><button class="go-btn" id="resume" type="button">Keep catching</button></div></div>
+<div class="scrim" id="over" hidden>
+  <div class="panel">
+    <div class="eyebrow">Game over</div>
+    <h2 id="oTitle"></h2>
+    <div class="stats"><div><b id="oScore">0</b><span>Score</span></div><div><b id="oRight">0</b><span>Caught</span></div><div><b id="oStreak">0</b><span>Best streak</span></div><div><b id="oRules">0</b><span>Rules</span></div></div>
+    <div id="oFixWrap"><p><b>Words to remember:</b></p><ol class="fix" id="oFixes"></ol></div>
+    <p class="earned" id="oEarned" hidden></p>
+    <button class="go-btn" id="again" type="button">Play again</button>
+    <div class="row"><button class="small" id="menuBtn" type="button">Choose a topic</button></div>
+  </div>
+</div>
+<script>/*PACK*/</script>
+<script>/*BUNDLE*/</script>
+</body>
+</html>

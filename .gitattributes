@@ -1,0 +1,5 @@
+* text=auto eol=lf
+*.hdr binary
+*.glb binary
+*.jpg binary
+*.png binary

@@ -29,7 +29,7 @@
         three_sentences: 'III', tell_story: '“”', describe_free: '✦'
     };
     const GAMES = [
-        { id: 'runner', href: '/games/runner', title: 'Grammar Runner', desc: 'Steer into the lane with the right word', meta: '5 worlds · keyboard', bestKey: 'gr-best' },
+        { id: 'runner', href: '/games/runner', title: 'Grammar Runner', desc: 'Steer into the lane with the right word', meta: '5 worlds · 3D · keyboard', bestKey: 'gr3d-best' },
         { id: 'catcher', href: '/games/catcher', title: 'Word Catcher', desc: 'Catch nouns, verbs, pronouns and more', meta: '10 rules · keyboard', bestKey: 'wc-best' }
     ];
     const TIPS = [

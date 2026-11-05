@@ -628,6 +628,12 @@ def game_runner():
     return send_from_directory(GAMES_DIR, 'grammar-runner.html')
 
 
+@app.route('/games/runner-2d')
+def game_runner_2d():
+    """Grammar Runner 2D: fallback for PCs without WebGL2"""
+    return send_from_directory(GAMES_DIR, 'grammar-runner-2d.html')
+
+
 @app.route('/games/catcher')
 def game_catcher():
     """Word Catcher: catch the words that match the rule"""

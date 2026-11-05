@@ -32,6 +32,18 @@ Lexi/
 
 ## Setup Instructions
 
+### Quick start on Linux
+
+With a `.env` in place (see step 3), run:
+
+```bash
+./run.sh
+```
+
+It creates `.venv` and installs the dependencies on the first run, then serves Lexi at http://localhost:5000.
+
+To rebuild the 3D Grammar Runner after changing `game-src/` (needs Node), run `cd game-src && npm install && npm run build`. See `game-src/README.md`.
+
 ### 1. Install Python Dependencies
 
 Make sure you have Python 3.8 or higher installed. Then run:
