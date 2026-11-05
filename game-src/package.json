@@ -3,5 +3,5 @@
   "private": true,
   "type": "module",
   "scripts": { "build": "node build.mjs" },
-  "devDependencies": { "esbuild": "0.28.2", "three": "0.170.0" }
+  "devDependencies": { "@dimforge/rapier2d-compat": "0.21.0", "esbuild": "0.28.2", "three": "0.170.0" }
 }

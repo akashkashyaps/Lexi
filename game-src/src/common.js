@@ -220,6 +220,38 @@ export function labelTexture(text, o = {}) {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
 }
 
+// The fox model has one flat colour per facet. Smooth normals across the facets, then grow short fur as shells:
+// copies of the mesh pushed out along the normals, each with fewer strands. Skinned, so the fur moves with the run.
+export const FUR_SHELLS = [0, 5, 9];
+export function furCoat(root) {
+  const furLayers = [];
+  const skinned = []; root.traverse(o => { if (o.isSkinnedMesh) skinned.push(o); });
+  for (const m of skinned) {
+    const g = m.geometry, p = g.attributes.position, n = new Float32Array(p.count * 3), acc = new Map(), idx = g.index, a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+    const key = i => `${Math.round(p.getX(i) * 50)},${Math.round(p.getY(i) * 50)},${Math.round(p.getZ(i) * 50)}`, tris = (idx ? idx.count : p.count) / 3;
+    for (let t = 0; t < tris; t++) { const i = idx ? idx.getX(t * 3) : t * 3, j = idx ? idx.getX(t * 3 + 1) : t * 3 + 1, k = idx ? idx.getX(t * 3 + 2) : t * 3 + 2; a.fromBufferAttribute(p, i); b.fromBufferAttribute(p, j).sub(a); c.fromBufferAttribute(p, k).sub(a); b.cross(c);
+      for (const v of [i, j, k]) { const K = key(v), e = acc.get(K) || [0, 0, 0]; e[0] += b.x; e[1] += b.y; e[2] += b.z; acc.set(K, e); } }
+    for (let i = 0; i < p.count; i++) { const e = acc.get(key(i)), L = Math.hypot(e[0], e[1], e[2]) || 1; n[i * 3] = e[0] / L; n[i * 3 + 1] = e[1] / L; n[i * 3 + 2] = e[2] / L; }
+    g.setAttribute('normal', new THREE.BufferAttribute(n, 3));
+    g.computeBoundingBox(); const size = g.boundingBox.getSize(new THREE.Vector3()).length(), base = m.material;
+    base.flatShading = false; base.roughness = 0.95; base.color.setScalar(0.5); base.needsUpdate = true;
+    const N = FUR_SHELLS[2], len = size * 0.016, cell = size * 0.0038;
+    for (let s = 1; s <= N; s++) {
+      const mat = base.clone(), f = s / N; mat.color.setScalar(0.5 + 0.36 * f); mat.flatShading = false;
+      mat.onBeforeCompile = sh => {
+        Object.assign(sh.uniforms, {furH: {value: f * len}, furF: {value: f}, furC: {value: 1 / cell}});
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float furH; varying vec3 vFur;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvFur = position; transformed += normal * furH;');
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float furF, furC; varying vec3 vFur;').replace('#include <map_fragment>', `#include <map_fragment>
+          float furH0 = fract(sin(dot(floor(vFur * furC), vec3(12.9898, 78.233, 37.719))) * 43758.5453); if (furH0 < furF * 0.92) discard;`);
+      };
+      mat.customProgramCacheKey = () => 'fur';
+      const sm = new THREE.SkinnedMesh(g, mat); sm.bind(m.skeleton, m.bindMatrix); sm.frustumCulled = false; sm.castShadow = false; sm.receiveShadow = false; m.parent.add(sm); furLayers.push(sm);
+    }
+  }
+  return furLayers;
+}
+
+
 /* ---------------- sound (all synthesized, no files) ---------------- */
 export class Sound {
   constructor() { this.ac = null; this.muted = false; try { this.muted = localStorage.getItem('lexi3d-mute') === '1'; } catch (e) {} this.musicOn = false; this.step = 0; this.key = 0; }

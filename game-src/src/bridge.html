@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Word Bridge</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Lilita+One&display=swap">
+<style>
+:root{--ink:#1d1640;--paper:#fff4dc;--marigold:#ffb627;--chili:#ef4f3f;--mint:#2fcf95;--sky:#38a6ff;--glass:rgba(22,16,52,.72);--soft:#cdc4f2;--edge:#ffd84a;
+  --display:"Lilita One","Arial Rounded MT Bold",system-ui,sans-serif;--body:"Baloo 2",system-ui,-apple-system,"Segoe UI",sans-serif;color-scheme:dark}
+[hidden]{display:none!important}
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--ink);color:var(--paper);font-family:var(--body);overflow:hidden;font-size:16px;-webkit-user-select:none;user-select:none}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+button{font:inherit;cursor:pointer}
+button:focus-visible,a:focus-visible{outline:3px solid var(--marigold);outline-offset:3px}
+.hud{position:fixed;inset:0;pointer-events:none}
+.top{position:absolute;left:16px;right:16px;top:12px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.leftcol,.right{display:flex;flex-direction:column;gap:8px}.right{align-items:flex-end}
+.chip{background:var(--glass);border:2px solid rgba(255,244,220,.16);border-radius:12px;padding:3px 12px 5px;display:flex;flex-direction:column;min-width:74px}
+.chip .l{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--soft);font-weight:800}
+.chip b{font-family:var(--display);font-weight:400;font-size:24px;line-height:1.1}
+.hearts{display:flex;gap:6px;padding:6px 10px;background:var(--glass);border:2px solid rgba(255,244,220,.16);border-radius:12px}
+.hearts i{width:24px;height:22px;background:#ff4d5e;clip-path:path('M12 21 C12 21 1 13.5 1 7 C1 3.4 3.7 1 6.7 1 C9 1 11 2.4 12 4.4 C13 2.4 15 1 17.3 1 C20.3 1 23 3.4 23 7 C23 13.5 12 21 12 21Z')}
+.hearts i.gone{background:rgba(255,255,255,.18)}
+.prog{background:var(--glass);border:2px solid rgba(255,244,220,.16);border-radius:12px;padding:4px 12px 8px;display:grid;gap:4px;justify-items:end}
+.world{font-family:var(--display);font-size:15px;color:var(--edge);text-shadow:0 2px 0 var(--ink)}
+.pips{display:flex;gap:6px}.pips i{width:18px;height:18px;border-radius:50%;background:rgba(255,255,255,.15);border:2px solid rgba(255,244,220,.35)}.pips i.on{background:var(--edge);border-color:var(--paper)}
+.btns{display:flex;gap:8px;pointer-events:auto}
+.pbtn{background:var(--glass);color:var(--paper);border:2px solid rgba(255,244,220,.2);border-radius:10px;padding:2px 12px 4px;font-weight:800;text-decoration:none;font-size:15px}
+.stripw{position:absolute;left:50%;transform:translateX(-50%);top:8px;display:flex;flex-direction:column;align-items:center;gap:4px;max-width:min(calc(100% - 32px),560px)}
+.strip{display:flex;gap:4px;flex-wrap:wrap;justify-content:center;background:rgba(255,246,226,.92);color:var(--ink);border:2px solid var(--ink);border-radius:12px;padding:6px 10px;box-shadow:0 2px 0 var(--ink);pointer-events:auto}
+.slot{min-width:44px;height:30px;padding:0 8px;border-radius:7px;border:2px dashed #a79fca;background:transparent;font-weight:800;color:var(--ink);font-size:17px;line-height:1}
+.slot.full{border:2px solid var(--ink);background:#f6d9a8}.slot.full:hover{background:#ffc9b8}
+.slot.keep{background:#c9f5df;cursor:default}
+.tray{position:absolute;left:50%;transform:translateX(-50%);bottom:14px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center;width:min(calc(100% - 32px),900px);pointer-events:auto}
+.word{display:inline-flex;align-items:center;gap:7px;font-family:var(--display);font-size:clamp(17px,2vw,22px);padding:3px 14px 5px;border-radius:12px;background:var(--paper);color:var(--ink);border:3px solid var(--ink);box-shadow:0 3px 0 var(--ink);transition:transform .1s}
+.word:hover{transform:translateY(-2px)}.word kbd{font-family:var(--body);font-size:12px;font-weight:800;background:rgba(35,26,69,.85);color:var(--paper);border-radius:5px;padding:0 5px}
+.word[disabled]{opacity:.25;box-shadow:none;cursor:default;transform:none}
+.send{font-family:var(--display);font-size:clamp(17px,2vw,22px);padding:3px 16px 5px;border-radius:12px;background:var(--marigold);color:var(--ink);border:3px solid var(--ink);box-shadow:0 3px 0 var(--ink)}
+.send[disabled]{opacity:.4;cursor:default;box-shadow:none}
+.status{position:absolute;left:50%;transform:translateX(-50%);bottom:24px;font-family:var(--display);font-size:24px;text-shadow:0 2px 0 var(--ink),0 0 10px rgba(20,14,50,.8);white-space:nowrap}
+.scrim{position:fixed;inset:0;display:grid;place-items:center;padding:16px;background:rgba(20,14,50,.55);overflow:auto}
+.panel{width:min(100%,560px);background:var(--paper);color:var(--ink);border:4px solid var(--ink);border-radius:24px;box-shadow:0 8px 0 var(--ink);padding:22px 26px 24px}
+.eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;font-weight:800;color:#7a6fa8}
+.panel h1{font-family:var(--display);font-weight:400;font-size:clamp(38px,6vw,54px);line-height:1;margin:0 0 4px}.panel h1 span{color:var(--sky)}
+.panel h2{font-family:var(--display);font-weight:400;font-size:clamp(28px,4.5vw,38px);margin:0 0 8px;line-height:1.05}
+.panel p{margin:6px 0;line-height:1.45}
+.go-btn{width:100%;margin-top:12px;font-family:var(--display);font-size:24px;padding:8px;border-radius:14px;border:4px solid var(--ink);box-shadow:0 4px 0 var(--ink);background:var(--marigold);color:var(--ink)}
+.go-btn[disabled]{opacity:.6}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.small{text-decoration:none;display:inline-block;background:transparent;border:2px solid var(--ink);color:var(--ink);border-radius:10px;padding:2px 12px 4px;font-weight:800;font-size:14px}
+.pair{font-family:var(--display);font-size:26px}.pair mark{background:#ffc9c0;color:var(--chili);border-radius:7px;padding:0 6px}
+.fix mark{background:#c9f5df;color:#14995f;border-radius:6px;padding:0 4px}
+.credits{font-size:12px;color:#7a6fa8;margin-top:10px}
+.loadbar{height:8px;border-radius:5px;background:rgba(35,26,69,.15);overflow:hidden;margin-top:10px}.loadbar i{display:block;height:100%;width:0;background:var(--marigold)}
+@media (max-width:760px){.stripw{top:112px}.world{display:none}}
+.chips{display:flex;gap:8px}.pot b{color:var(--marigold)}.pot i{font-style:normal;color:var(--marigold)}
+.troll{background:rgba(29,22,64,.82);color:#ffc9c0;font-weight:800;font-size:13px;border-radius:8px;padding:0 10px 2px;white-space:nowrap}
+.stakes{display:flex;gap:8px;justify-content:center;flex-basis:100%}
+.send{display:inline-flex;align-items:center;gap:7px}.send kbd{font-family:var(--body);font-size:12px;font-weight:800;background:rgba(35,26,69,.85);color:var(--paper);border-radius:5px;padding:0 5px}
+.send small{font-family:var(--body);font-weight:800;font-size:13px;opacity:.8}
+.scout{font-size:15px;padding:5px 12px}.scout[disabled]{opacity:.45}
+#oCal{margin:2px 0 6px;padding-left:20px}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div class="hud" id="hud" hidden>
+  <div class="top">
+    <div class="leftcol"><div class="chips"><div class="chip"><span class="l">Bank</span><b id="bank">0</b></div><div class="chip pot"><span class="l">Pot<i id="mult"></i></span><b id="pot">0</b></div></div><div class="hearts" id="hearts" aria-label="Hearts"></div></div>
+    <div class="right">
+      <div class="prog"><span class="world" id="worldName"></span><div class="pips" id="pips" aria-label="Bridges built in this world"></div></div>
+      <div class="btns"><button class="pbtn" id="hudMute" type="button">Sound on</button><a class="pbtn" href="index.html">All games</a></div>
+    </div>
+  </div>
+  <div class="stripw"><div class="strip" id="strip" aria-label="Your sentence"></div><div class="troll" id="troll" hidden></div></div>
+  <div class="tray" id="tray"></div>
+  <div class="status" id="status" hidden></div>
+</div>
+<div class="scrim" id="menu"><div class="panel">
+  <div class="eyebrow">Lexi games · physics</div>
+  <h1>Word <span>Bridge</span></h1>
+  <p>Lexi needs to cross the gorge, and <b>the bridge is your sentence.</b> Each word is a plank. Pick the words in the right order, but watch out: some words do not belong.</p>
+  <p>Words that go together hold fast. <b>Where the grammar is wrong, the bridge snaps</b> under Lexi's weight.</p>
+  <p><b>Click a word</b> or press its number. Backspace takes the last word off.</p>
+  <p><b>Bet on it.</b> Not sure, Quite sure or Certain: bigger bets win more and lose more, so bet what you really think. <b>After each bridge,</b> bank your points or push on for a bigger multiplier.</p>
+  <p><b>The Troll</b> hides trap words in the grammar you find hardest. Press H to Scout and remove one. You have 3 hearts, and 3 bridges reach the next world.</p>
+  <button class="go-btn" id="start" type="button" disabled>Loading…</button>
+  <div class="loadbar" id="loading"><i id="loadFill"></i></div>
+  <div class="row"><a class="small" href="index.html">All games</a></div>
+  <p class="credits" id="bestLine"></p>
+  <p class="credits">Physics: Rapier (Apache 2.0). Skies and textures: Poly Haven (CC0). Fox by PixelMannen (CC0), rigged by tomkranis (CC BY 4.0). Sentences from Tatoeba (CC BY 2.0 FR).</p>
+</div></div>
+<div class="scrim" id="explain" hidden><div class="panel">
+  <div class="eyebrow">The bridge snapped here</div>
+  <p class="pair" id="exPair"></p>
+  <p id="exWhy"></p>
+  <p class="fix" id="exFix"></p>
+  <button class="go-btn" id="exOk" type="button">Okay, fix it</button>
+</div></div>
+<div class="scrim" id="over" hidden><div class="panel">
+  <div class="eyebrow">Out of hearts</div>
+  <h2 id="oTitle"></h2>
+  <p id="oStats"></p>
+  <p id="oTroll"></p>
+  <div id="oCalWrap"><p><b>How good were your bets?</b></p><ul id="oCal"></ul></div>
+  <p id="oEarned" hidden></p>
+  <button class="go-btn" id="again" type="button">Build again</button>
+  <div class="row"><a class="small" href="index.html">All games</a></div>
+</div></div>
+<script>/*BUNDLE*/</script>
+</body>
+</html>

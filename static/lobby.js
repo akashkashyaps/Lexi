@@ -29,8 +29,9 @@
         three_sentences: 'III', tell_story: '“”', describe_free: '✦'
     };
     const GAMES = [
-        { id: 'runner', href: '/games/runner', title: 'Grammar Runner', desc: 'Steer into the lane with the right word', meta: '5 worlds · 3D · keyboard', bestKey: 'gr3d-best' },
-        { id: 'catcher', href: '/games/catcher', title: 'Word Catcher', desc: 'Catch nouns, verbs, pronouns and more', meta: '10 rules · keyboard', bestKey: 'wc-best' }
+        { id: 'runner', href: '/games/runner', title: 'Grammar Runner', desc: 'Steer into the lane with the right word', meta: '5 worlds · 3D · keyboard', bestKey: 'gr3d-best', cover: '/static/covers/grammar-runner.jpg' },
+        { id: 'catcher', href: '/games/catcher', title: 'Word Catcher', desc: 'Catch nouns, verbs, pronouns and more', meta: '10 rules · keyboard', bestKey: 'wc-best', cover: '/static/covers/word-catcher.jpg' },
+        { id: 'bridge', href: '/games/bridge', title: 'Word Bridge', desc: 'Build a bridge from words. Bad grammar snaps it', meta: '4 worlds · physics', bestKey: 'wb-best', cover: '/static/covers/word-bridge.jpg' }
     ];
     const TIPS = [
         'He, she and it take -s: she goes, he plays.',
@@ -154,7 +155,6 @@
 
     /* ---------------- lobby rendering ---------------- */
     const TABS = ['learn', 'story', 'game', 'stats'];
-    let gameArts = [];
     const STORY_COVERS = {
         story_adventure: '/static/covers/story-adventure.jpg',
         detective_classroom: '/static/covers/detective-classroom.jpg'
@@ -184,7 +184,6 @@
     function render() {
         const c = $('lb-content');
         c.textContent = '';
-        gameArts = [];
 
         if (locked()) {
             const head = el('div', 'lb-mode-head');
@@ -273,9 +272,11 @@
                 const b = el('button', 'lb-gart lb-chamfer');
                 b.type = 'button';
                 b.setAttribute('aria-pressed', String(i === state.sel));
-                const cv = el('canvas');
-                cv.setAttribute('aria-hidden', 'true');
-                b.appendChild(cv);
+                const img = el('img');
+                img.src = g.cover;
+                img.alt = '';
+                img.loading = 'lazy';
+                b.appendChild(img);
                 b.appendChild(el('div', 'shade'));
                 b.appendChild(el('span', 'sweep'));
                 b.appendChild(el('span', 'meta', g.meta));
@@ -284,7 +285,6 @@
                 b.addEventListener('click', () => { if (state.sel === i) start(); else { state.sel = i; render(); } });
                 tilt(b);
                 grid.appendChild(b);
-                gameArts.push({ id: g.id, cv });
             });
             c.appendChild(grid);
         } else {
@@ -569,62 +569,9 @@
         bx.fillStyle = 'rgba(255,200,140,.35)'; bx.fillRect(0, hz, BW, 1);
     }
 
-    /* ---------------- key art for game and story cards ---------------- */
-    function fit(cv) {
-        const r = cv.getBoundingClientRect(), d = Math.min(2, window.devicePixelRatio || 1);
-        if (!r.width) return null;
-        if (cv.width !== Math.round(r.width * d)) { cv.width = Math.round(r.width * d); cv.height = Math.round(r.height * d); }
-        const c = cv.getContext('2d'); c.setTransform(d, 0, 0, d, 0, 0);
-        return { c, W: r.width, H: r.height };
-    }
-    function runnerArt(c, W, H, t) {
-        const hz = H * 0.42;
-        let g = c.createLinearGradient(0, 0, 0, hz);
-        g.addColorStop(0, '#1f1a4a'); g.addColorStop(0.55, '#5a3a86'); g.addColorStop(0.85, '#e9735a'); g.addColorStop(1, '#ffb34d');
-        c.fillStyle = g; c.fillRect(0, 0, W, hz);
-        c.fillStyle = '#ffd67a'; c.beginPath(); c.arc(W / 2, hz, H * 0.13, Math.PI, 0); c.fill();
-        c.fillStyle = '#2c2258';
-        for (let i = 0; i < 14; i++) { const w = W / 14, h = H * (0.04 + ((i * 37) % 5) * 0.02); c.fillRect(i * w, hz - h, w - 2, h); }
-        c.fillStyle = '#6b4d7d'; c.fillRect(0, hz, W, H - hz);
-        c.fillStyle = '#2b2450'; c.beginPath(); c.moveTo(W * 0.47, hz); c.lineTo(W * 0.53, hz); c.lineTo(W * 1.1, H); c.lineTo(-W * 0.1, H); c.closePath(); c.fill();
-        c.fillStyle = '#ffb627';
-        [-1, 1].forEach((s) => { c.beginPath(); c.moveTo(W / 2 + s * W * 0.03, hz); c.lineTo(W / 2 + s * W * 0.034, hz); c.lineTo(W / 2 + s * W * 0.66, H); c.lineTo(W / 2 + s * W * 0.6, H); c.closePath(); c.fill(); });
-        const off = (t * 0.0012) % 1;
-        c.fillStyle = 'rgba(255,244,220,.75)';
-        for (let k = 0; k < 6; k++) { const p = (k + off) / 6, y = hz + (H - hz) * p * p, w = 1 + p * 6; for (const s of [-1, 1]) { const x = W / 2 + s * W * 0.2 * p * p * 1.6; c.fillRect(x - w / 2, y, w, (H - hz) * 0.04 * p + 1); } }
-        const cols = ['#e8735a', '#3fb3a7', '#f2c14e', '#9b6bd6'];
-        for (let i = 0; i < 4; i++) for (const s of [-1, 1]) { const p = 0.25 + i * 0.2, x = W / 2 + s * W * (0.08 + p * 0.6), h = H * (0.1 + p * 0.35), w = W * 0.05 + p * W * 0.12; c.fillStyle = cols[(i + (s > 0 ? 1 : 0)) % 4]; c.fillRect(s < 0 ? x - w : x, hz + (H - hz) * p * p - h, w, h); }
-        const fy = H * 0.86 - Math.abs(Math.sin(t * 0.012)) * 6;
-        c.fillStyle = '#f0782b'; c.beginPath(); c.ellipse(W / 2, fy - H * 0.08, H * 0.06, H * 0.08, 0, 0, Math.PI * 2); c.fill();
-        c.fillStyle = '#3fb3a7'; c.fillRect(W / 2 - H * 0.04, fy - H * 0.12, H * 0.08, H * 0.07);
-        c.fillStyle = '#f0782b'; c.beginPath(); c.arc(W / 2, fy - H * 0.18, H * 0.05, 0, Math.PI * 2); c.fill();
-    }
-    function catcherArt(c, W, H, t) {
-        let g = c.createLinearGradient(0, 0, 0, H);
-        g.addColorStop(0, '#3f8fd6'); g.addColorStop(0.7, '#8fd3ef'); g.addColorStop(1, '#d9f2f7');
-        c.fillStyle = g; c.fillRect(0, 0, W, H);
-        c.fillStyle = '#ffe08a'; c.beginPath(); c.arc(W * 0.84, H * 0.16, H * 0.08, 0, Math.PI * 2); c.fill();
-        [['noun', '#ef4f3f'], ['verb', '#3fb3a7'], ['big', '#9b6bd6'], ['she', '#e0607e']].forEach(([w, col], i) => {
-            const x = W * (0.18 + i * 0.22), y = ((t * 0.03 + i * 70) % (H * 0.9)) - 20;
-            c.fillStyle = col; c.beginPath(); c.ellipse(x, y - 18, 22, 16, 0, Math.PI, 0); c.fill();
-            c.strokeStyle = 'rgba(35,26,69,.6)'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(x, y - 18); c.lineTo(x, y - 6); c.stroke();
-            c.fillStyle = '#fff4dc'; c.strokeStyle = '#231a45'; c.lineWidth = 2;
-            c.beginPath(); if (c.roundRect) c.roundRect(x - 26, y - 6, 52, 22, 11); else c.rect(x - 26, y - 6, 52, 22); c.fill(); c.stroke();
-            c.fillStyle = '#231a45'; c.font = '800 13px Nunito, sans-serif'; c.textAlign = 'center'; c.fillText(w, x, y + 10);
-        });
-        const ground = H * 0.86;
-        ['#e8735a', '#3fb3a7', '#f2c14e', '#9b6bd6', '#e0607e'].forEach((col, i) => { c.fillStyle = col; const w = W / 5; c.fillRect(i * w, ground - H * (0.08 + (i % 3) * 0.04), w - 3, H); });
-        const bxp = W / 2 + Math.sin(t * 0.0015) * W * 0.25;
-        c.fillStyle = '#c98a3f'; c.beginPath(); if (c.roundRect) c.roundRect(bxp - 34, ground - H * 0.16, 68, H * 0.09, 8); else c.rect(bxp - 34, ground - H * 0.16, 68, H * 0.09); c.fill();
-        c.fillStyle = '#f0782b'; c.beginPath(); c.arc(bxp, ground - H * 0.23, H * 0.06, 0, Math.PI * 2); c.fill();
-    }
     function frame(t) {
         if (!document.body.classList.contains('lb-in-chat')) {
             drawBg(t);
-            if ($('activity-screen').classList.contains('active')) {
-                const tt = reduceMotion ? 0 : t;
-                for (const a of gameArts) { const k = fit(a.cv); if (k) (a.id === 'runner' ? runnerArt : catcherArt)(k.c, k.W, k.H, tt); }
-            }
         }
         requestAnimationFrame(frame);
     }

@@ -622,10 +622,26 @@ def index():
 GAMES_DIR = os.path.join(app.root_path, 'static', 'games')
 
 
+def send_game(name):
+    """Serve a built 3D game page, using its gzipped copy when the browser accepts one"""
+    if 'gzip' in request.headers.get('Accept-Encoding', '') and os.path.exists(os.path.join(GAMES_DIR, name + '.gz')):
+        response = send_from_directory(GAMES_DIR, name + '.gz', mimetype='text/html')
+        response.headers['Content-Encoding'] = 'gzip'
+        response.headers['Vary'] = 'Accept-Encoding'
+        return response
+    return send_from_directory(GAMES_DIR, name)
+
+
 @app.route('/games/runner')
 def game_runner():
     """Grammar Runner: steer into the lane with the right word"""
-    return send_from_directory(GAMES_DIR, 'grammar-runner.html')
+    return send_game('grammar-runner.html')
+
+
+@app.route('/games/bridge')
+def game_bridge():
+    """Word Bridge: build a bridge from words; bad grammar snaps it"""
+    return send_game('word-bridge.html')
 
 
 @app.route('/games/runner-2d')
@@ -658,7 +674,7 @@ def session_status():
 
 # Arcade games add to the same score as writing: 1 point per right answer,
 # capped per run so games help but never replace writing practice.
-GAME_TITLES = {'runner': 'Grammar Runner (game)', 'catcher': 'Word Catcher (game)'}
+GAME_TITLES = {'runner': 'Grammar Runner (game)', 'catcher': 'Word Catcher (game)', 'bridge': 'Word Bridge (game)'}
 GAME_POINTS_CAP = 25
 
 

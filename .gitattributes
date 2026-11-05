@@ -3,3 +3,4 @@
 *.glb binary
 *.jpg binary
 *.png binary
+*.gz binary

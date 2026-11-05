@@ -1,6 +1,6 @@
 // Grammar Runner 3D: one job only. Read the sentence, steer into the lane with the right word, run through its arch.
 if (!document.createElement('canvas').getContext('webgl2')) location.replace('/games/runner-2d');
-import {THREE, makeRenderer, Quality, makeComposer, makeSky, loadAll, inst, play, tintModel, Particles, labelTexture, Sound, reportRun, lexiSession, store, ASSET} from './common.js';
+import {THREE, makeRenderer, Quality, makeComposer, makeSky, loadAll, inst, play, tintModel, Particles, labelTexture, Sound, reportRun, lexiSession, store, ASSET, furCoat, FUR_SHELLS} from './common.js';
 
 const $ = id => document.getElementById(id);
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -147,42 +147,13 @@ const postGeo = new THREE.CylinderGeometry(0.16, 0.22, 3.1, 10, 4), beamGeo = ne
 (() => { const p = postGeo.attributes.position; for (let i = 0; i < p.count; i++) { const y = p.getY(i), a = Math.atan2(p.getZ(i), p.getX(i)), n = 1 + noise(a * 2, y * 2.5) * 0.12; p.setX(i, p.getX(i) * n); p.setZ(i, p.getZ(i) * n); } postGeo.computeVertexNormals(); const u = postGeo.attributes.uv; for (let i = 0; i < u.count; i++) u.setXY(i, u.getX(i) * 1.2, u.getY(i) * 2.6); const b = beamGeo.attributes.uv; for (let i = 0; i < b.count; i++) b.setXY(i, b.getX(i) * 2.4, b.getY(i) * 0.35); })();
 
 /* ---------------- player ---------------- */
-let fox, foxR, shadowBlob;
+let fox, foxR, shadowBlob, furLayers = [];
 function buildFox() {
   foxR = inst(A.models, 'fox', 2.3, {axis: 'z'}); fox = new THREE.Group(); fox.add(foxR.obj);
   foxR.obj.rotation.y = Math.PI; scene.add(fox); mixers.add(foxR.mixer); play(foxR, 'run', {speed: 1.2});
-  furCoat(foxR.obj);
+  furLayers = furCoat(foxR.obj);
   const sc = document.createElement('canvas'); sc.width = sc.height = 64; { const x = sc.getContext('2d'), gr = x.createRadialGradient(32, 32, 2, 32, 32, 32); gr.addColorStop(0, 'rgba(0,0,0,.75)'); gr.addColorStop(0.55, 'rgba(0,0,0,.3)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = gr; x.fillRect(0, 0, 64, 64); }
   shadowBlob = new THREE.Mesh(new THREE.CircleGeometry(0.9, 24), new THREE.MeshBasicMaterial({map: new THREE.CanvasTexture(sc), transparent: true, opacity: 0.55, depthWrite: false})); shadowBlob.rotation.x = -Math.PI / 2; shadowBlob.position.y = 0.05; scene.add(shadowBlob);
-}
-
-// The fox model has one flat colour per facet. Smooth normals across the facets, then grow short fur as shells:
-// copies of the mesh pushed out along the normals, each with fewer strands. Skinned, so the fur moves with the run.
-const FUR_SHELLS = [0, 5, 9], furLayers = [];
-function furCoat(root) {
-  const skinned = []; root.traverse(o => { if (o.isSkinnedMesh) skinned.push(o); });
-  for (const m of skinned) {
-    const g = m.geometry, p = g.attributes.position, n = new Float32Array(p.count * 3), acc = new Map(), idx = g.index, a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
-    const key = i => `${Math.round(p.getX(i) * 50)},${Math.round(p.getY(i) * 50)},${Math.round(p.getZ(i) * 50)}`, tris = (idx ? idx.count : p.count) / 3;
-    for (let t = 0; t < tris; t++) { const i = idx ? idx.getX(t * 3) : t * 3, j = idx ? idx.getX(t * 3 + 1) : t * 3 + 1, k = idx ? idx.getX(t * 3 + 2) : t * 3 + 2; a.fromBufferAttribute(p, i); b.fromBufferAttribute(p, j).sub(a); c.fromBufferAttribute(p, k).sub(a); b.cross(c);
-      for (const v of [i, j, k]) { const K = key(v), e = acc.get(K) || [0, 0, 0]; e[0] += b.x; e[1] += b.y; e[2] += b.z; acc.set(K, e); } }
-    for (let i = 0; i < p.count; i++) { const e = acc.get(key(i)), L = Math.hypot(e[0], e[1], e[2]) || 1; n[i * 3] = e[0] / L; n[i * 3 + 1] = e[1] / L; n[i * 3 + 2] = e[2] / L; }
-    g.setAttribute('normal', new THREE.BufferAttribute(n, 3));
-    g.computeBoundingBox(); const size = g.boundingBox.getSize(new THREE.Vector3()).length(), base = m.material;
-    base.flatShading = false; base.roughness = 0.95; base.color.setScalar(0.5); base.needsUpdate = true;
-    const N = FUR_SHELLS[2], len = size * 0.016, cell = size * 0.0038;
-    for (let s = 1; s <= N; s++) {
-      const mat = base.clone(), f = s / N; mat.color.setScalar(0.5 + 0.36 * f); mat.flatShading = false;
-      mat.onBeforeCompile = sh => {
-        Object.assign(sh.uniforms, {furH: {value: f * len}, furF: {value: f}, furC: {value: 1 / cell}});
-        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float furH; varying vec3 vFur;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvFur = position; transformed += normal * furH;');
-        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float furF, furC; varying vec3 vFur;').replace('#include <map_fragment>', `#include <map_fragment>
-          float furH0 = fract(sin(dot(floor(vFur * furC), vec3(12.9898, 78.233, 37.719))) * 43758.5453); if (furH0 < furF * 0.92) discard;`);
-      };
-      mat.customProgramCacheKey = () => 'fur';
-      const sm = new THREE.SkinnedMesh(g, mat); sm.bind(m.skeleton, m.bindMatrix); sm.frustumCulled = false; sm.castShadow = false; sm.receiveShadow = false; m.parent.add(sm); furLayers.push(sm);
-    }
-  }
 }
 
 /* ---------------- state ---------------- */
